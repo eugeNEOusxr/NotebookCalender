@@ -76,10 +76,13 @@ const odot  = (x, y, c = "#f0abfc") => `<circle cx="${sx(x)}" cy="${sy(y)}" r="3
 const mark = (x, y, label, c = "#86efac") => dot(x, y, c) +
   `<text x="${(+sx(x) + 6).toFixed(1)}" y="${(+sy(y) - 4).toFixed(1)}" fill="${c}" font-size="8.5" font-family="system-ui" font-weight="700">${label}</text>`;
 const hline = (y) => `<line x1="${sx(-5)}" y1="${sy(y)}" x2="${sx(5)}" y2="${sy(y)}" stroke="#facc15" stroke-width="1.6" stroke-dasharray="4 3"/>`;
+const seg   = (x1, y1, x2, y2, c = "#facc15") => `<line x1="${sx(x1)}" y1="${sy(y1)}" x2="${sx(x2)}" y2="${sy(y2)}" stroke="${c}" stroke-width="1.9" stroke-dasharray="5 3"/>`; // secant / connector
 const circle = `<circle cx="${sx(0)}" cy="${sy(0)}" r="${(3 * U).toFixed(1)}" fill="none" stroke="#f0abfc" stroke-width="2.6"/>`;
 function fig(...inner) {
-  return `<svg viewBox="0 0 200 200" width="200" height="200" xmlns="http://www.w3.org/2000/svg" ` +
-    `style="max-width:100%;height:auto;background:rgba(255,255,255,0.025);border-radius:8px;margin-top:8px">` +
+  // No fixed width/height: the viewBox makes it scale to its container, so the
+  // same SVG renders small in-card and large in the zoom overlay.
+  return `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" ` +
+    `style="width:100%;height:auto;display:block;background:rgba(255,255,255,0.03);border-radius:8px">` +
     `${GRID}${inner.join("")}</svg>`;
 }
 
@@ -89,7 +92,7 @@ const HLT_Q = "Is the function shown one-to-one?";
 export const SEED_DECKS = [
   {
     id: "seed_precalc_1_1",
-    seedVersion: 4,
+    seedVersion: 5,
     topic: "OpenStax Precalculus",
     section: "1.1 · Functions and Function Notation",
     cards: [
@@ -258,7 +261,7 @@ export const SEED_DECKS = [
   },
   {
     id: "seed_precalc_1_2",
-    seedVersion: 2,
+    seedVersion: 3,
     topic: "OpenStax Precalculus",
     section: "1.2 · Domain and Range",
     cards: [
@@ -432,6 +435,112 @@ export const SEED_DECKS = [
         a: "f(−2) = 3 — left of 0 the graph is the flat line y = 3.  f(2) = 2 — right of 0 it's the line y = x.",
         fig:  fig(plot(() => 3, -5, -0.1), odot(0, 3), plot((x) => x, 0, 5), cdot(0, 0)),
         figA: fig(plot(() => 3, -5, -0.1), odot(0, 3), plot((x) => x, 0, 5), cdot(0, 0), mark(-2, 3, "(−2, 3)"), mark(2, 2, "(2, 2)")) }
+    ]
+  },
+  {
+    id: "seed_precalc_1_3",
+    seedVersion: 1,
+    topic: "OpenStax Precalculus",
+    section: "1.3 · Rates of Change & Behavior of Graphs",
+    cards: [
+      // ── Key definitions ─────────────────────────────────────────────
+      { id: "pc1_3_def_arc", type: "concept",
+        q: "What is the average rate of change of a function, and what is its formula?",
+        a: "How much the output changes per unit change in input over an interval: Δy/Δx = (f(x₂) − f(x₁)) / (x₂ − x₁)." },
+      { id: "pc1_3_def_inc", type: "concept",
+        q: "What does it mean for a function to be increasing on an interval?",
+        a: "As x increases across the interval, f(x) also increases: for any a < b in it, f(a) < f(b). The graph rises left-to-right." },
+      { id: "pc1_3_def_dec", type: "concept",
+        q: "What does it mean for a function to be decreasing on an interval?",
+        a: "As x increases across the interval, f(x) decreases: for any a < b in it, f(a) > f(b). The graph falls left-to-right." },
+      { id: "pc1_3_def_lmax", type: "concept",
+        q: "What is a local (relative) maximum?",
+        a: "A point where the function changes from increasing to decreasing — higher than all nearby points (f(b) ≥ f(x) near b), though not necessarily the highest overall." },
+      { id: "pc1_3_def_lmin", type: "concept",
+        q: "What is a local (relative) minimum?",
+        a: "A point where the function changes from decreasing to increasing — lower than all nearby points (f(b) ≤ f(x) near b)." },
+      { id: "pc1_3_def_amax", type: "concept",
+        q: "What is the absolute (global) maximum of a function?",
+        a: "The single highest output over the entire domain: f(c) ≥ f(x) for every x in the domain." },
+      { id: "pc1_3_def_amin", type: "concept",
+        q: "What is the absolute (global) minimum of a function?",
+        a: "The single lowest output over the entire domain: f(d) ≤ f(x) for every x in the domain." },
+
+      // ── Average rate of change: computations ────────────────────────
+      { id: "pc1_3_e01", type: "problem",
+        q: "Gas cost $2.84 in 2007 and $2.41 in 2009. Find the average rate of change per year.",
+        a: "(2.41 − 2.84) / (2009 − 2007) = −0.43 / 2 = −$0.215 per year (about a 22¢/yr drop)." },
+      { id: "pc1_3_e03", type: "problem",
+        q: "Over 6 hours, Anna's distance from home goes from 10 mi to 292 mi. Find her average speed.",
+        a: "(292 − 10) / 6 = 282 / 6 = 47 miles per hour." },
+      { id: "pc1_3_e04", type: "problem",
+        q: "Find the average rate of change of f(x) = x² − 1/x on [2, 4].",
+        a: "f(2) = 4 − 1/2 = 7/2;  f(4) = 16 − 1/4 = 63/4.  ARC = (63/4 − 7/2)/(4 − 2) = (49/4)/2 = 49/8." },
+      { id: "pc1_3_e05", type: "problem",
+        q: "The force F(d) = 2/d². Find its average rate of change from d = 2 cm to d = 6 cm.",
+        a: "F(2) = 1/2;  F(6) = 1/18.  ARC = (1/18 − 1/2)/(6 − 2) = (−8/18)/4 = −1/9 newton per cm." },
+      { id: "pc1_3_e06", type: "problem",
+        q: "Find the average rate of change of g(t) = t² + 3t + 1 on [0, a] as an expression in a.",
+        a: "g(0) = 1;  g(a) = a² + 3a + 1.  ARC = (a² + 3a)/a = a + 3." },
+      { id: "pc1_3_t2", type: "problem",
+        q: "Find the average rate of change of f(x) = x − 2/x on [1, 9].",
+        a: "f(1) = −1;  f(9) = 79/9.  ARC = (79/9 − (−1))/(9 − 1) = (88/9)/8 = 11/9." },
+      { id: "pc1_3_t3", type: "problem",
+        q: "Find the average rate of change of f(x) = x² + 2x − 8 on [5, a] as an expression in a.",
+        a: "f(5) = 27;  f(a) = a² + 2a − 8.  ARC = (a² + 2a − 35)/(a − 5) = ((a − 5)(a + 7))/(a − 5) = a + 7." },
+      { id: "pc1_3_a1", type: "problem",
+        q: "Find the average rate of change of f(x) = 4x² − 7 on [1, 3].",
+        a: "f(1) = −3;  f(3) = 29.  ARC = (29 − (−3))/(3 − 1) = 32/2 = 16." },
+      { id: "pc1_3_a2", type: "problem",
+        q: "Find the average rate of change of g(x) = 2x² − 9 on [−2, 2].",
+        a: "g(−2) = −1;  g(2) = −1.  ARC = (−1 − (−1))/(2 − (−2)) = 0 — equal endpoints give a flat secant." },
+      { id: "pc1_3_a3", type: "concept",
+        q: "What is the average rate of change of the linear function p(x) = 3x + 4 on any interval?",
+        a: "Always 3 — for a line the average rate of change equals its slope, the same on every interval." },
+      { id: "pc1_3_r1", type: "problem",
+        q: "A car's odometer reads 4,500 mi at the start of a trip and 4,800 mi five hours later. Find the average speed.",
+        a: "(4800 − 4500)/5 = 300/5 = 60 miles per hour." },
+
+      // ── Behavior of graphs: concepts ────────────────────────────────
+      { id: "pc1_3_c1", type: "concept",
+        q: "Where on a graph do local maxima and minima occur?",
+        a: "Exactly where the function switches direction — a local max where it turns from increasing to decreasing, a local min where it turns from decreasing to increasing." },
+      { id: "pc1_3_c2", type: "concept",
+        q: "How do absolute extrema differ from local extrema?",
+        a: "Local extrema are highest/lowest only within a small neighborhood; absolute extrema are the highest/lowest over the entire domain. An absolute extremum may occur at a local extremum or at a domain endpoint." },
+
+      // ── Verbal exercises ────────────────────────────────────────────
+      { id: "pc1_3_v1", type: "concept",
+        q: "Can the average rate of change of a function be constant?",
+        a: "Yes — for a linear function it's constant (the slope). For nonlinear functions it generally varies from interval to interval." },
+      { id: "pc1_3_v2", type: "concept",
+        q: "On a graph, how is an absolute maximum different from a local maximum?",
+        a: "A local maximum is a peak relative to nearby points; the absolute maximum is the single highest point on the whole graph." },
+      { id: "pc1_3_v3", type: "concept",
+        q: "Compare the graphs of f(x) = |x| and f(x) = x².",
+        a: "Both have an absolute minimum at the origin and are symmetric about the y-axis; |x| forms a sharp V (corner), while x² is a smooth curve." },
+
+      // ── Graphical (numbered axes, zoomable) ─────────────────────────
+      { id: "pc1_3_g1", type: "problem",
+        q: "From the graph, find the average rate of change of g on the interval [−1, 2].",
+        a: "Read g(−1) = 4 and g(2) = 1, so ARC = (1 − 4)/(2 − (−1)) = −3/3 = −1 (the slope of the dashed secant).",
+        fig:  fig(plot((t) => 0.4 * t * t - 1.4 * t + 2.2, -1.5, 4)),
+        figA: fig(plot((t) => 0.4 * t * t - 1.4 * t + 2.2, -1.5, 4), seg(-1, 4, 2, 1), mark(-1, 4, "(−1, 4)"), mark(2, 1, "(2, 1)")) },
+      { id: "pc1_3_g2", type: "problem",
+        q: "From the graph, on what interval is f decreasing?",
+        a: "f decreases between its turning points — roughly (−1.7, 1.7). It increases on (−∞, −1.7) and (1.7, ∞).",
+        fig:  fig(plot((x) => 0.1 * x * x * x - 0.9 * x, -4.2, 4.2)),
+        figA: fig(plot((x) => 0.1 * x * x * x - 0.9 * x, -4.2, 4.2), mark(-1.73, 1.04, "max"), mark(1.73, -1.04, "min")) },
+      { id: "pc1_3_g3", type: "problem",
+        q: "From the graph, identify the local maximum and local minimum points.",
+        a: "Local maximum ≈ (−1.7, 1.0); local minimum ≈ (1.7, −1.0).",
+        fig:  fig(plot((x) => 0.1 * x * x * x - 0.9 * x, -4.2, 4.2)),
+        figA: fig(plot((x) => 0.1 * x * x * x - 0.9 * x, -4.2, 4.2), mark(-1.73, 1.04, "(−1.7, 1.0)"), mark(1.73, -1.04, "(1.7, −1.0)")) },
+      { id: "pc1_3_g4", type: "problem",
+        q: "On the domain −3 ≤ x ≤ 3, find the absolute maximum and minimum of f(x) = x² − 4.",
+        a: "Absolute minimum −4 at x = 0 (the vertex); absolute maximum 5 at x = −3 and x = 3 (the endpoints).",
+        fig:  fig(plot((x) => x * x - 4, -3, 3), cdot(-3, 5), cdot(3, 5)),
+        figA: fig(plot((x) => x * x - 4, -3, 3), mark(0, -4, "min (0, −4)"), mark(-3, 5, "max"), mark(3, 5, "max")) }
     ]
   }
 ];

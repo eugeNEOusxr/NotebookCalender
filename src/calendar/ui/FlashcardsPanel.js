@@ -3,7 +3,7 @@
  * topic/section). Tap a card to flip; mark "Got it" or "Review". Decks can be
  * made standalone here or jumped to from a Study Map section.
  */
-import { loadFlashcardSets, getFlashcardSet, generateFlashcards, deleteFlashcardSet, setCardStatus, setProgress } from "../../inkling/study/flashcardsModel.js";
+import { loadFlashcardSets, getFlashcardSet, generateFlashcards, deleteFlashcardSet, setCardStatus, setProgress, ensureSeedDecks } from "../../inkling/study/flashcardsModel.js";
 
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 
@@ -38,6 +38,7 @@ export class FlashcardsPanel {
 
   _renderList() {
     this._openId = null;
+    ensureSeedDecks();
     this._body.innerHTML = "";
     const gen = document.createElement("div");
     gen.style.cssText = "display:flex;gap:7px;margin-bottom:14px";
@@ -78,8 +79,9 @@ export class FlashcardsPanel {
       const card = document.createElement("button");
       card.type = "button";
       card.style.cssText = "display:block;width:100%;text-align:left;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.12);border-radius:11px;padding:12px 13px;margin-bottom:10px;cursor:pointer;color:#e6edf3";
+      const badge = s.builtIn ? ` <span style="font:700 9px system-ui;color:#0b0f1a;background:#f0abfc;border-radius:5px;padding:1px 5px;vertical-align:middle">READY-MADE</span>` : "";
       card.innerHTML =
-        `<div style="font:800 14px system-ui">${esc(s.section || s.topic)}</div>` +
+        `<div style="font:800 14px system-ui">${esc(s.section || s.topic)}${badge}</div>` +
         (s.section ? `<div style="font-size:11px;color:#8b949e">${esc(s.topic)}</div>` : "") +
         `<div style="height:6px;border-radius:99px;background:rgba(255,255,255,0.1);margin:8px 0 5px;overflow:hidden"><div style="height:100%;width:${p.pct}%;background:#f0abfc"></div></div>` +
         `<div style="font-size:11px;color:#8b949e">${p.known}/${p.total} known</div>`;
@@ -157,7 +159,13 @@ export class FlashcardsPanel {
     const card = set.cards[this._idx];
     const kind = card.type === "problem" ? " · 🧮 Problem" : " · 💡 Concept";
     this._counter.textContent = `Card ${this._idx + 1} of ${set.cards.length}${kind}`;
-    this._cardEl.textContent = this._flipped ? card.a : card.q;
+    const text = this._flipped ? card.a : card.q;
+    const fig = this._flipped ? (card.figA || card.fig) : card.fig;
+    if (fig) {
+      this._cardEl.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:4px"><div>${esc(text)}</div>${fig}</div>`;
+    } else {
+      this._cardEl.textContent = text;
+    }
     this._cardEl.style.background = this._flipped ? "rgba(57,217,138,0.08)" : "rgba(240,171,252,0.07)";
   }
 

@@ -4,7 +4,7 @@ const CACHE_NAME = `${CACHE_VERSION}-core`;
 // Persistent, version-INDEPENDENT cache for the heavy 3D boot-loader dino
 // (~8 MB). Kept out of the per-deploy cache so it's downloaded once, not on
 // every release, and survives the activate cleanup below.
-const DINO_CACHE = "inkling-dino-v1";
+const DINO_CACHE = "inkling-dino-v2";
 const CORE_ASSETS = [
   "/",
   "/index.html",

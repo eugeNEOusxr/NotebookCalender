@@ -108,6 +108,11 @@ export class InklingPanel {
       this.minimize();
       this.showFlashcards(e.detail?.setId);
     });
+    // The Mind canvas (wordweaver.html, in an iframe) asks the app to open a question.
+    window.addEventListener("message", (e) => {
+      const m = e && e.data;
+      if (m && m.type === "inkling-open-flashcard" && m.q) this.showFlashcards(String(m.q));
+    });
     this._startCron();
 
     // Gentle in-app check-in: if the user's been away a while, Inkling asks what
@@ -233,8 +238,30 @@ export class InklingPanel {
     else this.minimize();
   }
 
+  /** Bump the unread Inkling-message count (Inkling spoke while minimized). */
+  _bumpUnread() {
+    this._unread = (this._unread || 0) + 1;
+    this._renderChatBadge();
+  }
+
+  /** Clear the unread-message count (the user opened the chat). */
+  _clearUnread() {
+    this._unread = 0;
+    this._renderChatBadge();
+  }
+
+  /** Paint the unread count onto the 💬 Chat icon in the orb fan. */
+  _renderChatBadge() {
+    if (!this._chatBadge) return;
+    const n = this._unread || 0;
+    this._chatBadge.textContent = n > 9 ? "9+" : String(n);
+    this._chatBadge.style.display = n > 0 ? "flex" : "none";
+  }
+
   expand() {
     this._minimized = false;
+    this._clearUnread();
+    document.getElementById("inkling-checkin-nudge")?.remove();
     this.el?.classList.remove("hidden", "inkling-panel--minimized");
     // Sit above the Schedule day overlay (z 11000) AND the Mind panel (z 11086)
     // so the chat floats over the mind map when you open it to ask about it.
@@ -267,6 +294,10 @@ export class InklingPanel {
     const orb = document.getElementById("inkling-fab");
     if (!orb) return;
     this._orb = orb;
+    // Unread Inkling-message count lives on the 💬 Chat icon in the orb fan (see
+    // _buildOrbMenu), NOT on the main orb — the main orb keeps only the red Alerts
+    // badge (note/calendar alerts) in its top-right quadrant.
+    this._unread = 0;
     try {
       const pos = JSON.parse(localStorage.getItem("inkling-orb-pos") || "null");
       if (pos && Number.isFinite(pos.left) && Number.isFinite(pos.top)) this._placeOrb(pos.left, pos.top);
@@ -334,14 +365,15 @@ export class InklingPanel {
     // Orb = Inkling's own quick actions. Connections-map, Goals, Alerts and
     // Alarm now live in the bottom nav, so they're dropped here to keep the
     // orb cluster legible (was 9 cramped icons).
+    // Alarm (🔔) and Connections (🔗) removed 2026-06-18: alarms live in the
+    // Schedule day panel; Connections opens when you ask Inkling to make them.
     this._orbItems = [
       mk("💬", "Chat with Inkling", () => this.openWithContext()),
+      mk("🔔", "Alerts", () => this.alerts?.toggle()),
       mk("🎤", "Voice message", () => this.openWithVoice()),
       mk("🧠", "Mind", () => { this.minimize(); this.showMind(); }),
       mk("📚", "Study", () => { this.minimize(); this.showStudy(); }),
       mk("📇", "Flashcards", () => { this.minimize(); this.showFlashcards(); }),
-      mk("🔔", "Alarm", () => this.app?.openAlarmClock?.()),
-      mk("🔗", "Connections", () => this.showConnections()),
       mk("＋", "New event", () => this._orbNewEvent()),
       mk("🎨", "Text style", () => openTextStylePicker()),
       mk("📅", "Go to today", () => this._orbToday())
@@ -351,6 +383,21 @@ export class InklingPanel {
       this._orbItems = this._orbItems.filter((b) => b.dataset.label !== "Voice message");
     }
     for (const b of this._orbItems) menu.appendChild(b);
+    // Red unread-message count on the 💬 Chat icon (the small chat orb in the fan).
+    const chatBtn = this._orbItems.find((b) => b.dataset.label === "Chat with Inkling");
+    if (chatBtn) {
+      chatBtn.style.position = "relative";
+      const cb = document.createElement("span");
+      cb.className = "inkling-chat-badge";
+      cb.style.cssText =
+        "position:absolute;top:-3px;right:-3px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;" +
+        "background:linear-gradient(180deg,#f87171,#dc2626);color:#fff;font:800 10px system-ui;" +
+        "display:none;align-items:center;justify-content:center;box-shadow:0 2px 7px rgba(0,0,0,.55);" +
+        "border:1.5px solid rgba(255,255,255,.9);z-index:5;pointer-events:none";
+      chatBtn.appendChild(cb);
+      this._chatBadge = cb;
+      this._renderChatBadge();
+    }
     document.body.appendChild(menu);
     this._orbMenu = menu;
     document.addEventListener("pointerdown", (e) => {
@@ -453,22 +500,47 @@ export class InklingPanel {
     this._goals.show(opts);
   }
 
-  /** Open the Mind surface — the live knowledge graph WordWeaver has built. */
-  showMind(opts = {}) {
-    if (!this._mindPanel) this._mindPanel = new InklingMindPanel();
-    this._mindPanel.show(opts);
+  /** Open the Mind surface — the WordWeaver knowledge canvas (zoomable node graph). */
+  showMind(/* opts */) {
+    this._openCanvasOverlay("/wordweaver.html", "Mind — knowledge canvas", "_mindOverlay", true);
   }
 
   /** Open the Study Maps surface — Haiku-built study paths with mastery tracking. */
-  showStudy() {
+  showStudy(opts = {}) {
     if (!this._studyPanel) this._studyPanel = new StudyMapPanel();
-    this._studyPanel.show();
+    this._studyPanel.show(opts);
   }
 
-  /** Open the Flashcards surface (optionally jump straight to a deck). */
-  showFlashcards(setId) {
-    if (!this._flashcards) this._flashcards = new FlashcardsPanel();
-    this._flashcards.show(setId);
+  /** Open the quiz deck (full-screen overlay). Pass a question id ("1.2.11") to deep-link. */
+  showFlashcards(q) {
+    const src = "/quiz.html" + (q ? "?q=" + encodeURIComponent(q) : "");
+    this._openCanvasOverlay(src, "Flashcards", "_quizOverlay", false);
+  }
+
+  /** Shared full-screen iframe overlay used by the Mind canvas and the flashcards. */
+  _openCanvasOverlay(src, title, key, gyro) {
+    let ov = this[key];
+    if (ov) {
+      const f = ov.querySelector("iframe");
+      if (f && f.getAttribute("src") !== src) f.setAttribute("src", src);  // re-point (e.g. jump to a question)
+      ov.style.display = "block";
+      return;
+    }
+    ov = document.createElement("div");
+    ov.style.cssText = "position:fixed;inset:0;z-index:12000;background:#05060d";
+    const frame = document.createElement("iframe");
+    frame.setAttribute("src", src);
+    frame.title = title;
+    frame.style.cssText = "border:0;width:100%;height:100%;display:block";
+    if (gyro) frame.allow = "accelerometer; gyroscope; magnetometer";   // device-tilt parallax inside the iframe
+    const close = document.createElement("button");
+    close.textContent = "✕";
+    close.setAttribute("aria-label", "Close " + title);
+    close.style.cssText = "position:absolute;top:calc(10px + env(safe-area-inset-top));right:12px;width:34px;height:34px;border-radius:9px;border:0;background:rgba(8,12,22,0.7);color:#e6edf3;font-size:15px;cursor:pointer;z-index:2";
+    close.addEventListener("click", () => { ov.style.display = "none"; });
+    ov.append(frame, close);
+    document.body.appendChild(ov);
+    this[key] = ov;
   }
 
   /**
@@ -748,6 +820,10 @@ export class InklingPanel {
     this.messagesEl.appendChild(div);
     this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
 
+    // Inkling spoke while the chat is minimized → show an unread count on the orb
+    // so the hover button feels like a chat with a waiting message.
+    if (role === "inkling" && this._minimized) this._bumpUnread();
+
     // Layer 0 capture + graph ingest: persist real dialogue turns (user + Inkling
     // replies, not system chrome or proactive nudges) to the local-first Mind
     // store, then grow the on-device knowledge graph from the turn.
@@ -926,16 +1002,31 @@ export class InklingPanel {
   _showCheckInNudge() {
     if (typeof document === "undefined") return;
     document.getElementById("inkling-checkin-nudge")?.remove();
+    const orb = this._orb || document.getElementById("inkling-fab");
     const n = document.createElement("button");
     n.id = "inkling-checkin-nudge";
     n.type = "button";
     n.textContent = "✦ What are you up to?";
+    // A chat bubble that sits right beside the orb (tail toward it) so it reads as
+    // Inkling speaking from the hover button, not a stray corner popup.
     n.style.cssText =
-      "position:fixed;right:16px;bottom:84px;z-index:11090;background:rgba(15,23,42,.95);color:#e2e8f0;" +
-      "border:1px solid rgba(129,140,248,.55);border-radius:999px;padding:9px 14px;font:700 12px system-ui;" +
-      "cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.5)";
+      "position:fixed;z-index:11090;background:rgba(15,23,42,.96);color:#e2e8f0;" +
+      "border:1px solid rgba(129,140,248,.6);border-radius:14px 14px 4px 14px;padding:9px 13px;" +
+      "font:700 12px system-ui;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.5);max-width:210px;text-align:left";
     n.addEventListener("click", () => { n.remove(); try { this.expand(); } catch { /* ignore */ } });
     document.body.appendChild(n);
+    // Anchor beside the orb (prefer its left; flip right if there's no room).
+    const r = orb && orb.getBoundingClientRect();
+    if (r && r.width) {
+      const w = n.offsetWidth || 190, h = n.offsetHeight || 38;
+      let left = r.left - w - 10;
+      if (left < 8) left = r.right + 10;
+      n.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, left)) + "px";
+      n.style.top = Math.max(8, Math.min(window.innerHeight - h - 8, r.top + r.height / 2 - h / 2)) + "px";
+      n.style.right = "auto"; n.style.bottom = "auto";
+    } else {
+      n.style.right = "16px"; n.style.bottom = "84px";
+    }
     setTimeout(() => n.remove(), 14000);
   }
 

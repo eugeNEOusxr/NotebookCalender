@@ -9,3 +9,5 @@ src-tauri/target/
 !.cursor/rules/
 .cursor/rules/*
 !.cursor/rules/*.mdc
+
+src-tauri/gen/

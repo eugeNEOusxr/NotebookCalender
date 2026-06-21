@@ -21,7 +21,8 @@
     "visual:dev": "npm run serve:pwa"
   },
   "dependencies": {
-    "pg": "^8.13.1"
+    "pg": "^8.13.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.2",

@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>WordWeaver — Knowledge Canvas</title>
+<style>
+  :root{
+    --bg:#070912; --panel:#0e1320; --line:#1f2740; --text:#e8ecf6; --muted:#8a93ad; --accent:#7c5cff;
+    --domain:#ffcf5c; --chapter:#b48bff; --section:#5aa9ff; --subsection:#3fe0d0; --problem:#ff8a4c; --step:#7be08a; --answer:#ffd66b;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;-webkit-user-select:none;user-select:none}
+  #cv{display:block;width:100vw;height:100vh;touch-action:none;cursor:grab}
+  #cv.drag{cursor:grabbing}
+  /* HUD */
+  .hud{position:fixed;z-index:5;pointer-events:none}
+  #crumb{top:12px;left:14px;right:14px;display:flex;gap:6px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+  #crumb .cb{pointer-events:auto;cursor:pointer;padding:3px 9px;border:.5px solid var(--line);border-radius:999px;background:rgba(14,19,32,.7);backdrop-filter:blur(6px);color:var(--text);white-space:nowrap;max-width:42vw;overflow:hidden;text-overflow:ellipsis}
+  #crumb .cb:hover{border-color:var(--accent)}
+  #crumb .sep{align-self:center;opacity:.5}
+  #title{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:4;font-weight:700;letter-spacing:.5px;font-size:15px;color:#fff;opacity:.85;pointer-events:none}
+  #title small{font-weight:500;color:var(--muted)}
+  /* node card */
+  #card{position:fixed;left:14px;bottom:14px;z-index:6;width:min(330px,86vw);background:rgba(14,19,32,.92);backdrop-filter:blur(10px);border:.5px solid var(--line);border-radius:16px;padding:14px 15px;box-shadow:0 18px 50px rgba(0,0,0,.5);transform:translateY(140%);transition:transform .28s cubic-bezier(.2,.8,.2,1)}
+  #card.show{transform:translateY(0)}
+  #card .kind{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted)}
+  #card h2{margin:3px 0 6px;font-size:18px;line-height:1.2}
+  #card p{margin:0 0 12px;font-size:13.5px;line-height:1.5;color:#c7cee0}
+  #card .row{display:flex;gap:8px;flex-wrap:wrap}
+  .btn{pointer-events:auto;border:none;border-radius:10px;padding:9px 13px;font-size:13px;font-weight:600;cursor:pointer;background:#1a2236;color:var(--text)}
+  .btn:hover{background:#23304c}
+  .btn.acc{background:var(--accent);color:#fff}
+  .btn.acc:hover{filter:brightness(1.08)}
+  .btn:disabled{opacity:.5;cursor:default}
+  /* hover preview of a flashcard question */
+  #peek{position:fixed;z-index:7;max-width:300px;background:rgba(12,17,30,.96);backdrop-filter:blur(10px);border:.5px solid var(--problem);border-radius:13px;padding:10px 12px;box-shadow:0 14px 40px rgba(0,0,0,.55);pointer-events:none;opacity:0;transform:translateY(6px);transition:opacity .14s,transform .14s;display:none}
+  #peek.show{opacity:1;transform:translateY(0)}
+  #peek .peek-h{font-size:11px;letter-spacing:.5px;color:var(--problem);font-weight:700;margin-bottom:5px}
+  #peekBody{font-size:13.5px;line-height:1.45;color:#e9edf8}
+  #peek .peek-go{margin-top:7px;font-size:11px;color:var(--muted)}
+  /* controls */
+  #ctl{right:14px;bottom:14px;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+  #ctl button{pointer-events:auto;width:42px;height:42px;border-radius:12px;border:.5px solid var(--line);background:rgba(14,19,32,.85);color:var(--text);font-size:19px;cursor:pointer}
+  #ctl button:hover{border-color:var(--accent)}
+  #hint{left:50%;bottom:16px;transform:translateX(-50%);font-size:12px;color:var(--muted);background:rgba(14,19,32,.6);padding:5px 12px;border-radius:999px;white-space:nowrap}
+  /* legend */
+  #legend{right:14px;top:48px;display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted);text-align:right}
+  #legend .lg{display:flex;align-items:center;gap:6px;justify-content:flex-end}
+  #legend .dot{width:9px;height:9px;border-radius:50%}
+  .spin{display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-1px;margin-right:6px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="title">Word<span style="color:var(--accent)">Weaver</span> &nbsp;<small>knowledge canvas</small></div>
+<div id="crumb" class="hud"></div>
+<div id="legend" class="hud">
+  <div class="lg"><span>Domain</span><span class="dot" style="background:var(--domain)"></span></div>
+  <div class="lg"><span>Chapter</span><span class="dot" style="background:var(--chapter)"></span></div>
+  <div class="lg"><span>Section</span><span class="dot" style="background:var(--section)"></span></div>
+  <div class="lg"><span>Subsection</span><span class="dot" style="background:var(--subsection)"></span></div>
+  <div class="lg"><span>Problem</span><span class="dot" style="background:var(--problem)"></span></div>
+  <div class="lg"><span>Solution step</span><span class="dot" style="background:var(--step)"></span></div>
+</div>
+<div id="ctl" class="hud">
+  <button id="zin" title="Zoom in">+</button>
+  <button id="zout" title="Zoom out">−</button>
+  <button id="home" title="Reset view">⌂</button>
+</div>
+<div id="hint" class="hud">Scroll / pinch to zoom · drag to pan · tap a topic to dive · tap a 📇 question to open it</div>
+<div id="peek"><div class="peek-h"><span id="peekTag">📇 Flashcard question</span></div><div id="peekBody"></div><div class="peek-go">click to open in flashcards →</div></div>
+<div id="card">
+  <div class="kind" id="cardKind"></div>
+  <h2 id="cardTitle"></h2>
+  <p id="cardDesc"></p>
+  <div class="row">
+    <button class="btn acc" id="cardExpand">✨ Break it down</button>
+    <button class="btn" id="cardOpen" style="display:none">📇 Open flashcard →</button>
+    <button class="btn" id="cardUp">↑ Parent</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     DATA — a recursive curriculum graph. Compact authoring form:
+       { t:title, k:contentType, d:description, ch:[ ...children ] }
+     (k = domain | chapter | section | subsection | problem | step | answer)
+     One branch (Ch.1 → 1.1) is expanded to full depth incl. a worked problem;
+     other chapters are stubs you can grow with "✨ Break it down" (AI rule b).
+  ───────────────────────────────────────────────────────────────────────── */
+  var RAW = {
+    t:"Precalculus", k:"domain", d:"OpenStax Precalculus — the whole subject as one living map. Dive into any chapter to see its sections, problems, and the steps that solve them.",
+    ch:[
+      { t:"1 · Functions", k:"chapter", d:"What a function is, how we notate it, its domain/range, rates of change, composition, transformations, and inverses.",
+        ch:[
+          { t:"1.1 Functions & Notation", k:"section", d:"Definition of a function, f(x) notation, evaluating, and reading graphs.",
+            ch:[
+              { t:"1.1.1 Evaluate", k:"problem", q:"1.1.1", prev:"The amount of garbage, G, produced by a city with population p is given by G = f(p). G is measured in tons per week, and p is measured in thousands of people. The town of Tola has a population of 25,000 and produces 1…" },
+              { t:"1.1.2 Function? graphs", k:"problem", q:"1.1.2", prev:"Select all of the following graphs which represent y as a function of x." },
+              { t:"1.1.3 Function? tables", k:"problem", q:"1.1.3", prev:"Select all of the following tables which represent y as a function of x." },
+              { t:"1.1.4 One-to-one", k:"problem", q:"1.1.4", prev:"Select all of the following tables which represent y as a function of x and are one-to-one." },
+              { t:"1.1.5 One-to-one", k:"problem", q:"1.1.5", prev:"Select all of the following graphs which are one-to-one functions." },
+              { t:"1.1.6 Read graph", k:"problem", q:"1.1.6", prev:"The plot below represents the function f(x):" },
+              { t:"1.1.7 From a table", k:"problem", q:"1.1.7", prev:"Based on the table below," },
+              { t:"1.1.8 Read graph", k:"problem", q:"1.1.8", prev:"The plot below represents the function f(x):" },
+              { t:"1.1.9 Evaluate", k:"problem", q:"1.1.9", prev:"Given the function f(x) = 3x² − 7x + 3. Calculate the following values:" },
+              { t:"1.1.10 Evaluate", k:"problem", q:"1.1.10", prev:"Suppose f(x) = −x² − x + 8. Compute the following:" },
+              { t:"1.1.11 Match", k:"problem", q:"1.1.11", prev:"Match each function name with its equation." },
+              { t:"1.1.12 Match", k:"problem", q:"1.1.12", prev:"Match each graph with its equation." },
+              { t:"1.1.13 Match", k:"problem", q:"1.1.13", prev:"Match each table with its equation." },
+              { t:"1.1.14 Match", k:"problem", q:"1.1.14", prev:"Match each table with its equation." },
+              { t:"1.1.15 Match", k:"problem", q:"1.1.15", prev:"Match each graph with its table." },
+              { t:"1.1.16 Evaluate", k:"problem", q:"1.1.16", prev:"Given the function f(x) = 7x + 6, evaluate and simplify the expressions below. Simplify fully — expand and collect like terms (e.g. 3x + x → 4x)." },
+              { t:"1.1.17 Evaluate", k:"problem", q:"1.1.17", prev:"For the function f(x) = 3x² + 2x, evaluate and simplify." },
+              { t:"1.1.18 Evaluate", k:"problem", q:"1.1.18", prev:"For the function f(x) = −5x² + x + 5, evaluate and fully simplify each of the following." },
+              { t:"1.1.19 Difference quotient", k:"problem", q:"1.1.19", prev:"For the function f(x) = −2x + 8, evaluate and simplify the difference quotient." },
+              { t:"1.1.20 Evaluate", k:"problem", q:"1.1.20", prev:"Given the function f(x) = 7 + 7x², calculate the following values:" }
+            ] },
+          { t:"1.2 Domain & Range", k:"section", d:"Domains of rational/radical functions, interval notation, piecewise, range.",
+            ch:[
+              { t:"1.2.1 Domain", k:"problem", q:"1.2.1", prev:"Find the domain of f(x) = x² − 1. Write your answer in interval notation." },
+              { t:"1.2.2 Domain", k:"problem", q:"1.2.2", prev:"Find the domain of f(x) = (x + 1)/(2 − x). Interval notation." },
+              { t:"1.2.3 Domain", k:"problem", q:"1.2.3", prev:"Find the domain of f(x) = √(7 − x). Interval notation." },
+              { t:"1.2.4 Domain", k:"problem", q:"1.2.4", prev:"Find the domain of f(x) = 3/(x − 2). Interval notation." },
+              { t:"1.2.5 Domain", k:"problem", q:"1.2.5", prev:"Find the domain of f(x) = √(4 − 3x). Interval notation." },
+              { t:"1.2.6 Domain", k:"problem", q:"1.2.6", prev:"Find the domain of f(x) = 1/(x² − x − 6). Interval notation." },
+              { t:"1.2.7 Domain", k:"problem", q:"1.2.7", prev:"Find the domain of f(x) = (2x + 1)/√(5 − x). Interval notation." },
+              { t:"1.2.8 Domain", k:"problem", q:"1.2.8", prev:"Find the domain of f(x) = √x / x. Interval notation." },
+              { t:"1.2.9 Interval notation", k:"problem", q:"1.2.9", prev:"Write the set {x | 1 ≤ x ≤ 3 or x > 5} in interval notation." },
+              { t:"1.2.10 Domain", k:"problem", q:"1.2.10", prev:"What is the domain of f(x) = √x ?" },
+              { t:"1.2.11 Piecewise", k:"problem", q:"1.2.11", prev:"For f(x) = { x + 1 if x < −2; −2x − 3 if x ≥ −2 }, find each value." },
+              { t:"1.2.12 Piecewise", k:"problem", q:"1.2.12", prev:"For f(x) = { 7x + 3 if x < 0; 7x + 6 if x ≥ 0 }, find each value." },
+              { t:"1.2.13 Piecewise", k:"problem", q:"1.2.13", prev:"For f(x) = { 5x if x < 0; 3 if 0 ≤ x ≤ 3; x² if x > 3 }, find each value." },
+              { t:"1.2.14 Domain & range", k:"problem", q:"1.2.14", prev:"Find the domain and range of f(x) = 2/(x + 1). Interval notation." },
+              { t:"1.2.15 Domain & range", k:"problem", q:"1.2.15", prev:"Find the domain and range of f(x) = 2√(x + 4). Interval notation." },
+              { t:"1.2.16 Domain & range", k:"problem", q:"1.2.16", prev:"Find the domain and range of f(x) = −√(2 − x). Interval notation." },
+              { t:"1.2.17 Domain", k:"problem", q:"1.2.17", prev:"Find the domain of f(x) = (x − 3)/(x² + 9x − 22). Interval notation." },
+              { t:"1.2.18 Domain", k:"problem", q:"1.2.18", prev:"Find the domain of f(x) = √(x − 6)/(x − 4). Interval notation." },
+              { t:"1.2.19 Domain", k:"problem", q:"1.2.19", prev:"What is the domain of f(x) = ∛x (cube root)?" },
+              { t:"1.2.20 Concept", k:"problem", q:"1.2.20", prev:"A company's cost to produce x items is C(x) = 10x + 500 dollars." }
+            ] },
+          { t:"1.3 Rates of Change", k:"section", d:"Average rate of change; increasing/decreasing; local & absolute extrema.",
+            ch:[
+              { t:"1.3.1 Avg rate of change", k:"problem", q:"1.3.1", prev:"Find the average rate of change of f(x) = x² − 1 on the interval [2, 4]." },
+              { t:"1.3.2 Avg rate of change", k:"problem", q:"1.3.2", prev:"Find the average rate of change of f(x) = 3x + 2 on the interval [1, 5]." },
+              { t:"1.3.3 Avg rate of change", k:"problem", q:"1.3.3", prev:"Find the average rate of change of f(x) = x² on the interval [1, 3]." },
+              { t:"1.3.4 Avg rate of change", k:"problem", q:"1.3.4", prev:"Find the average rate of change of f(x) = 1/x on the interval [1, 4]. A fraction is fine." },
+              { t:"1.3.5 Avg rate of change", k:"problem", q:"1.3.5", prev:"Use the table to find the average rate of change of f on the interval [1, 3]." },
+              { t:"1.3.6 Avg rate of change", k:"problem", q:"1.3.6", prev:"Find the average rate of change of f(x) = x² + 3x + 1 on [0, a]. Simplify in terms of a." },
+              { t:"1.3.7 Increasing", k:"problem", q:"1.3.7", prev:"Use the graph of f below. On what interval(s) is f increasing?" },
+              { t:"1.3.8 Decreasing", k:"problem", q:"1.3.8", prev:"Use the same graph. On what interval is f decreasing?" },
+              { t:"1.3.9 Local maximum", k:"problem", q:"1.3.9", prev:"From the graph, identify the local maximum." },
+              { t:"1.3.10 Local minimum", k:"problem", q:"1.3.10", prev:"From the graph, identify the local minimum." },
+              { t:"1.3.11 Absolute extrema", k:"problem", q:"1.3.11", prev:"From the graph of f(x) = x² − 4, identify the absolute minimum." },
+              { t:"1.3.12 Avg rate of change", k:"problem", q:"1.3.12", prev:"Using the graph, find the average rate of change of f on the interval [−2, 2]." },
+              { t:"1.3.13 Extrema", k:"problem", q:"1.3.13", prev:"How many local extrema (turning points) does the graph have?" },
+              { t:"1.3.14 Avg rate of change", k:"problem", q:"1.3.14", prev:"The average rate of change of a function over [a, b] equals:" },
+              { t:"1.3.15 Local maximum", k:"problem", q:"1.3.15", prev:"A local maximum occurs at a point where the function changes from:" },
+              { t:"1.3.16 Increasing", k:"problem", q:"1.3.16", prev:"A function is increasing on an interval when, as x increases, the output f(x):" },
+              { t:"1.3.17 Concept", k:"problem", q:"1.3.17", prev:"Over 6 hours, a car's distance from home goes from 10 miles to 292 miles. Find the average speed." },
+              { t:"1.3.18 Avg rate of change", k:"problem", q:"1.3.18", prev:"A plant grows from 4 cm to 22 cm over 6 days. Find the average rate of change." },
+              { t:"1.3.19 Avg rate of change", k:"problem", q:"1.3.19", prev:"Find the average rate of change of f(x) = x³ on the interval [0, 2]." },
+              { t:"1.3.20 Avg rate of change", k:"problem", q:"1.3.20", prev:"Find the average rate of change of f(x) = 4x² − 7 on the interval [1, 3]." }
+            ] },
+          { t:"1.4 Composition", k:"section", d:"Combine functions with +, −, ×, ÷ and composition (f∘g).",
+            ch:[
+              { t:"1.4.1 Sum f+g", k:"problem", q:"1.4.1", prev:"Let f(x) = 2x + 1 and g(x) = 3x − 2. Find the sum (f + g)(x). Write your answer in simplest form." },
+              { t:"1.4.2 Difference f−g", k:"problem", q:"1.4.2", prev:"With f(x) = 2x + 1 and g(x) = 3x − 2, find the difference (f − g)(x)." },
+              { t:"1.4.3 Difference f−g", k:"problem", q:"1.4.3", prev:"With f(x) = 2x + 1 and g(x) = 3x − 2, find (g − f)(x)." },
+              { t:"1.4.4 Product fg", k:"problem", q:"1.4.4", prev:"With f(x) = 2x + 1 and g(x) = 3x − 2, find the product (fg)(x) and expand fully. (Use ^ for exponents, e.g. x^2.)" },
+              { t:"1.4.5 Domain", k:"problem", q:"1.4.5", prev:"For the quotient (f/g)(x) with g(x) = 3x − 2, which value of x must be excluded from the domain?" },
+              { t:"1.4.6 Composition", k:"problem", q:"1.4.6", prev:"Let f(x) = x² + 1 and g(x) = x − 3. Find the composition f(g(x)) and expand fully." },
+              { t:"1.4.7 Composition", k:"problem", q:"1.4.7", prev:"With f(x) = x² + 1 and g(x) = x − 3, find g(f(x))." },
+              { t:"1.4.8 Composition", k:"problem", q:"1.4.8", prev:"With f(x) = x² + 1 and g(x) = x − 3, evaluate f(g(5))." },
+              { t:"1.4.9 Composition", k:"problem", q:"1.4.9", prev:"With f(x) = x² + 1 and g(x) = x − 3, evaluate g(f(4))." },
+              { t:"1.4.10 Composition", k:"problem", q:"1.4.10", prev:"With f(x) = x² + 1 and g(x) = x − 3, evaluate f(g(0))." },
+              { t:"1.4.11 From a table", k:"problem", q:"1.4.11", prev:"Use the table of values below." },
+              { t:"1.4.12 From a table", k:"problem", q:"1.4.12", prev:"Use the same table." },
+              { t:"1.4.13 From a table", k:"problem", q:"1.4.13", prev:"Use the same table." },
+              { t:"1.4.14 From a table", k:"problem", q:"1.4.14", prev:"Use the same table." },
+              { t:"1.4.15 Composition", k:"problem", q:"1.4.15", prev:"Let f(x) = √x and g(x) = x − 4. State the domain of (f ∘ g)(x) = √(x − 4) in interval notation." },
+              { t:"1.4.16 Composition", k:"problem", q:"1.4.16", prev:"Let f(x) = 1/x and g(x) = x + 3. State the domain of (f ∘ g)(x) = 1/(x + 3) in interval notation." },
+              { t:"1.4.17 Decomposition", k:"problem", q:"1.4.17", prev:"Which decomposition expresses h(x) = (x + 1)³ as f(g(x))?" },
+              { t:"1.4.18 Decomposition", k:"problem", q:"1.4.18", prev:"Which decomposition expresses h(x) = √(3x − 2) as f(g(x))?" },
+              { t:"1.4.19 Decomposition", k:"problem", q:"1.4.19", prev:"Which decomposition expresses h(x) = 5 / (x² + 4) as f(g(x))?" },
+              { t:"1.4.20 Composition", k:"problem", q:"1.4.20", prev:"The composition (f ∘ g)(x) means:" },
+              { t:"1.4.21 Product fg", k:"problem", q:"1.4.21", prev:"The table below gives the annual sales (in millions) of a product." },
+              { t:"1.4.22 Avg rate of change", k:"problem", q:"1.4.22", prev:"Based on the graph above, estimate (to one decimal place) the average rate of change from x = 1 to x = 5." },
+              { t:"1.4.23 Avg rate of change", k:"problem", q:"1.4.23", prev:"Find the average rate of change of g(x) = 4x³ + 4 from x = −2 to x = 3." },
+              { t:"1.4.24 Avg rate of change", k:"problem", q:"1.4.24", prev:"Find the average rate of change of g(x) = 4x² + 5/x⁴ on the interval [−4, 1]." },
+              { t:"1.4.25 Avg rate of change", k:"problem", q:"1.4.25", prev:"Find the average rate of change of f(x) = 6x² − 3 on the interval [2, b]. Your answer will be an expression involving b." },
+              { t:"1.4.26 Avg rate of change", k:"problem", q:"1.4.26", prev:"Given f(x) = 1/(x + 4), find the average rate of change of f(x) on the interval [7, 7 + h]. Your answer will be an expression involving h." },
+              { t:"1.4.27 Increasing", k:"problem", q:"1.4.27", prev:"For the graph below, determine if it represents a function that is increasing or decreasing." },
+              { t:"1.4.28 Increasing", k:"problem", q:"1.4.28", prev:"The function graphed above is increasing on some interval(s) and decreasing on others. Use the graph to state each in interval notation." },
+              { t:"1.4.29 Local maximum", k:"problem", q:"1.4.29", prev:"The function f(x) = 2x³ − 33x² + 168x + 10 has one local minimum and one local maximum. Use a graph of the function to estimate these local extrema." },
+              { t:"1.4.30 Read graph", k:"problem", q:"1.4.30", prev:"Consider the function graphed at right." },
+              { t:"1.4.31 Absolute extrema", k:"problem", q:"1.4.31", prev:"Find the absolute maximum and minimum for the given graph. Give your answer as an ordered pair." },
+              { t:"1.4.32 Read graph", k:"problem", q:"1.4.32", prev:"Consider the function in the graph below." }
+            ] },
+          { t:"1.5 Transformations", k:"section", d:"Shifts, reflections, stretches; even & odd symmetry.",
+            ch:[
+              { t:"1.5.1 Transformation", k:"problem", q:"1.5.1", prev:"If g(x) = f(x) + 3, the graph of g is the graph of f shifted:" },
+              { t:"1.5.2 Transformation", k:"problem", q:"1.5.2", prev:"The graph of g(x) = f(x − 2) is the graph of f shifted:" },
+              { t:"1.5.3 Transformation", k:"problem", q:"1.5.3", prev:"The graph of g(x) = f(x + 4) is the graph of f shifted:" },
+              { t:"1.5.4 Transformation", k:"problem", q:"1.5.4", prev:"Write the equation for g, the graph of f(x) = x² shifted up 5 units." },
+              { t:"1.5.5 Transformation", k:"problem", q:"1.5.5", prev:"Write the equation for g, the graph of f(x) = x² shifted right 3 units." },
+              { t:"1.5.6 Transformation", k:"problem", q:"1.5.6", prev:"Which function is f(x) = |x| shifted left 2 units and down 1 unit?" },
+              { t:"1.5.7 Transformation", k:"problem", q:"1.5.7", prev:"The graph of g(x) = −f(x) is the graph of f reflected about the:" },
+              { t:"1.5.8 Transformation", k:"problem", q:"1.5.8", prev:"The graph of g(x) = f(−x) is the graph of f reflected about the:" },
+              { t:"1.5.9 Transformation", k:"problem", q:"1.5.9", prev:"Write the equation for the reflection of f(x) = x³ about the x-axis." },
+              { t:"1.5.10 Transformation", k:"problem", q:"1.5.10", prev:"Write the equation for the reflection of f(x) = 2x + 1 about the y-axis (replace x with −x and simplify)." },
+              { t:"1.5.11 Transformation", k:"problem", q:"1.5.11", prev:"The transformation g(x) = 3f(x) represents a:" },
+              { t:"1.5.12 Transformation", k:"problem", q:"1.5.12", prev:"The transformation g(x) = ½ f(x) represents a:" },
+              { t:"1.5.13 Transformation", k:"problem", q:"1.5.13", prev:"The transformation g(x) = f(2x) represents a:" },
+              { t:"1.5.14 Transformation", k:"problem", q:"1.5.14", prev:"Write g(x): reflect f(x) = x² about the x-axis, then shift the result up 2 units." },
+              { t:"1.5.15 Symmetry", k:"problem", q:"1.5.15", prev:"A function whose graph is symmetric about the y-axis is:" },
+              { t:"1.5.16 Symmetry", k:"problem", q:"1.5.16", prev:"A function whose graph is symmetric about the origin is:" },
+              { t:"1.5.17 Even / odd", k:"problem", q:"1.5.17", prev:"Is f(x) = x² − 4 even, odd, or neither? (Test f(−x).)" },
+              { t:"1.5.18 Even / odd", k:"problem", q:"1.5.18", prev:"Is f(x) = x³ − x even, odd, or neither? (Test f(−x).)" },
+              { t:"1.5.19 Even / odd", k:"problem", q:"1.5.19", prev:"Is f(x) = x³ + 2 even, odd, or neither? (Test f(−x).)" },
+              { t:"1.5.20 Transformation", k:"problem", q:"1.5.20", prev:"The point (2, 5) lies on y = f(x). Give the corresponding point on each transformed graph, as an ordered pair." }
+            ] },
+          { t:"1.6 Absolute Value", k:"section", d:"Graph, solve equations & inequalities with |x|.",
+            ch:[
+              { t:"1.6.1 Evaluate", k:"problem", q:"1.6.1", prev:"Evaluate |−7|." },
+              { t:"1.6.2 Evaluate", k:"problem", q:"1.6.2", prev:"Evaluate |3 − 8|." },
+              { t:"1.6.3 Evaluate", k:"problem", q:"1.6.3", prev:"Evaluate |12| + |−4|." },
+              { t:"1.6.4 Absolute value", k:"problem", q:"1.6.4", prev:"The absolute value |x| is best described as:" },
+              { t:"1.6.5 Concept", k:"problem", q:"1.6.5", prev:"The expression |x − 5| represents the distance between x and:" },
+              { t:"1.6.6 Absolute value", k:"problem", q:"1.6.6", prev:"The graph of f(x) = |x| is shaped like a:" },
+              { t:"1.6.7 Absolute value", k:"problem", q:"1.6.7", prev:"The graph of f(x) = −|x| is:" },
+              { t:"1.6.8 Evaluate", k:"problem", q:"1.6.8", prev:"The vertex of f(x) = |x − 2| + 3 is the point (x, y). Find each coordinate." },
+              { t:"1.6.9 Concept", k:"problem", q:"1.6.9", prev:"The vertex of g(x) = |x + 4| − 1 is the point (x, y). Find each coordinate." },
+              { t:"1.6.10 Transformation", k:"problem", q:"1.6.10", prev:"f(x) = |x| + 5 is the graph of f(x) = |x| shifted:" },
+              { t:"1.6.11 Transformation", k:"problem", q:"1.6.11", prev:"f(x) = |x − 3| is the graph of f(x) = |x| shifted:" },
+              { t:"1.6.12 Absolute value", k:"problem", q:"1.6.12", prev:"Which absolute value function has its vertex at (−2, 1)?" },
+              { t:"1.6.13 Domain & range", k:"problem", q:"1.6.13", prev:"From the graph of f(x) = |x| below, state the domain and range in interval notation." },
+              { t:"1.6.14 Interval notation", k:"problem", q:"1.6.14", prev:"State the range of f(x) = −|x| + 3 in interval notation. (It opens downward with a maximum value of 3.)" },
+              { t:"1.6.15 Absolute value", k:"problem", q:"1.6.15", prev:"The range of f(x) = |x| + 2 is:" },
+              { t:"1.6.16 Absolute value", k:"problem", q:"1.6.16", prev:"Solve |x| = 6. (There are two solutions.)" },
+              { t:"1.6.17 Concept", k:"problem", q:"1.6.17", prev:"Solve |x − 3| = 5. (Use x − 3 = ±5.)" },
+              { t:"1.6.18 Concept", k:"problem", q:"1.6.18", prev:"Solve |2x + 1| = 9. (Use 2x + 1 = ±9.)" },
+              { t:"1.6.19 Interval notation", k:"problem", q:"1.6.19", prev:"Solve the inequality |x| < 4. Write the solution set in interval notation." },
+              { t:"1.6.20 Interval notation", k:"problem", q:"1.6.20", prev:"Solve the inequality |x| ≥ 3. Write the solution set in interval notation." }
+            ] },
+          { t:"1.7 Inverse Functions", k:"section", d:"One-to-one functions, the horizontal line test, and finding inverses.",
+            ch:[
+              { t:"1.7.1 Inverse", k:"problem", q:"1.7.1", prev:"A function has an inverse that is also a function if and only if the function is:" },
+              { t:"1.7.2 One-to-one", k:"problem", q:"1.7.2", prev:"Which graphical test determines whether a function is one-to-one (and therefore invertible)?" },
+              { t:"1.7.3 Composition", k:"problem", q:"1.7.3", prev:"If f and g are inverse functions, then f(g(x)) =" },
+              { t:"1.7.4 Transformation", k:"problem", q:"1.7.4", prev:"The graph of f−1 is the graph of f reflected over the line:" },
+              { t:"1.7.5 Evaluate", k:"problem", q:"1.7.5", prev:"If f(3) = 7, find f−1(7)." },
+              { t:"1.7.6 Evaluate", k:"problem", q:"1.7.6", prev:"If f(−2) = 5, find f−1(5)." },
+              { t:"1.7.7 From a table", k:"problem", q:"1.7.7", prev:"Use the table of values below." },
+              { t:"1.7.8 From a table", k:"problem", q:"1.7.8", prev:"Use the same table." },
+              { t:"1.7.9 Inverse", k:"problem", q:"1.7.9", prev:"Find the inverse of f(x) = x + 4. (Swap x and y, then solve for y.)" },
+              { t:"1.7.10 Inverse", k:"problem", q:"1.7.10", prev:"Find the inverse of f(x) = 2x." },
+              { t:"1.7.11 Inverse", k:"problem", q:"1.7.11", prev:"Find the inverse of f(x) = 2x − 6." },
+              { t:"1.7.12 Inverse", k:"problem", q:"1.7.12", prev:"Find the inverse of f(x) = 3x + 1." },
+              { t:"1.7.13 Inverse", k:"problem", q:"1.7.13", prev:"Find the inverse of f(x) = (x − 5)/2." },
+              { t:"1.7.14 Inverse", k:"problem", q:"1.7.14", prev:"To verify that f and g are inverse functions, you must show that:" },
+              { t:"1.7.15 Domain", k:"problem", q:"1.7.15", prev:"The domain of f−1 is equal to the ______ of f." },
+              { t:"1.7.16 Domain", k:"problem", q:"1.7.16", prev:"Why does f(x) = x² (with all real numbers as its domain) NOT have an inverse function?" },
+              { t:"1.7.17 Domain", k:"problem", q:"1.7.17", prev:"To make f(x) = x² invertible, you can restrict its domain to:" },
+              { t:"1.7.18 Inverse", k:"problem", q:"1.7.18", prev:"The inverse of f(x) = x³ is:" },
+              { t:"1.7.19 Evaluate", k:"problem", q:"1.7.19", prev:"Given f(x) = x + 7, find f−1(10)." },
+              { t:"1.7.20 Inverse", k:"problem", q:"1.7.20", prev:"Which pair of functions are inverses of each other?" }
+            ] }
+        ] },
+      { t:"2 · Linear Functions", k:"chapter", d:"Slope, equations of lines, modeling, and fitting linear models to data.",
+        ch:[
+          { t:"2.1 Linear Functions", k:"section", d:"Slope-intercept and point-slope forms." },
+          { t:"2.2 Graphs of Lines", k:"section", d:"Graphing lines; parallel & perpendicular." },
+          { t:"2.3 Modeling", k:"section", d:"Build linear models from words." },
+          { t:"2.4 Fitting Models", k:"section", d:"Lines of best fit / regression intuition." }
+        ] },
+      { t:"3 · Polynomial & Rational", k:"chapter", d:"Power, polynomial, and rational functions; zeros and asymptotes." },
+      { t:"4 · Exponential & Log", k:"chapter", d:"Exponential growth/decay, logarithms, and their equations." },
+      { t:"5 · Trig Functions", k:"chapter", d:"Angles, the unit circle, and the six trigonometric functions." },
+      { t:"6 · Periodic Functions", k:"chapter", d:"Graphs of sine, cosine, and other periodic models." },
+      { t:"7 · Trig Identities", k:"chapter", d:"Identities and solving trigonometric equations." },
+      { t:"8 · Applied Trig", k:"chapter", d:"Law of sines/cosines, vectors, polar coordinates." },
+      { t:"9 · Systems", k:"chapter", d:"Systems of equations & inequalities; matrices." },
+      { t:"10 · Analytic Geometry", k:"chapter", d:"Conic sections: parabolas, ellipses, hyperbolas." },
+      { t:"11 · Sequences & Prob.", k:"chapter", d:"Sequences, series, counting, and probability." },
+      { t:"12 · Intro to Calculus", k:"chapter", d:"Limits and the idea of the derivative." }
+    ]
+  };
+
+  /* ── Build the node model: id, title, description, parentId, children[], depthLevel, contentType ── */
+  var NODES = [], byId = {}, _uid = 0;
+  function build(raw, parent, depth){
+    var node = {
+      id: "n" + (_uid++),
+      title: raw.t,
+      description: raw.d || "",
+      contentType: raw.k,
+      parentId: parent ? parent.id : null,
+      depthLevel: depth,
+      children: [],
+      q: raw.q || null,              // deep link into the flashcards (e.g. "1.2.11")
+      prev: raw.prev || null,        // hover preview = the flashcard question itself
+      done: false,                   // completed in the quiz (learning trajectory)
+      _expanded: false, _aiKids: false,
+      appear: parent ? 0 : 1            // grow-in animation progress
+    };
+    NODES.push(node); byId[node.id] = node;
+    if (parent) parent.children.push(node);
+    (raw.ch || []).forEach(function(c){ build(c, node, depth + 1); });
+    return node;
+  }
+  var ROOT = build(RAW, null, 0);
+
+  // Learning trajectory: read flashcard progress (same-origin localStorage) → mark which question-nodes are done.
+  function loadProgressMap(){ try { return JSON.parse(localStorage.getItem("inkling-quiz-progress") || "{}") || {}; } catch(_){ return {}; } }
+  function refreshDone(){ var prog = loadProgressMap(); NODES.forEach(function(n){
+    if (!n.q) return; var m=/^(\d+\.\d+)\.(\d+)$/.exec(n.q); if(!m) return;
+    var sec=prog[m[1]]; n.done = !!(sec && sec[(parseInt(m[2],10)-1)] != null);
+  }); }
+  refreshDone();
+  document.addEventListener("visibilitychange", function(){ if(!document.hidden) refreshDone(); });  // re-check after returning from the quiz
+
+  var COLOR = { domain:"#ffcf5c", chapter:"#b48bff", section:"#5aa9ff", subsection:"#3fe0d0", problem:"#ff8a4c", step:"#7be08a", answer:"#ffd66b" };
+  var KINDLABEL = { domain:"Domain", chapter:"Chapter", section:"Section", subsection:"Subsection", problem:"Problem", step:"Solution step", answer:"Final answer" };
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     LAYOUT — radial sunburst. Each node owns an angular wedge sized by how
+     many leaves live beneath it; depth maps to a ring radius. Children stay
+     positioned relative to their parent (same wedge, next ring out).
+  ───────────────────────────────────────────────────────────────────────── */
+  var RING  = [0, 560, 1080, 1560, 1980, 2360, 2700];   // radius per depth
+  var SIZE  = [120, 52, 30, 18, 12, 8, 6];               // node radius per depth
+  function ringAt(d){ return RING[Math.min(d, RING.length-1)] + (d>=RING.length ? (d-RING.length+1)*340 : 0); }
+  function sizeAt(d){ return SIZE[Math.min(d, SIZE.length-1)]; }
+  function countLeaves(n){ if(!n.children.length){ n._leaves=1; return 1; } var s=0; n.children.forEach(function(c){ s+=countLeaves(c); }); n._leaves=s; return s; }
+  function layout(n, a0, a1){
+    var mid = (a0 + a1) / 2;
+    n._a0=a0; n._a1=a1; n.angle=mid;
+    var r = ringAt(n.depthLevel);
+    n.x = Math.cos(mid) * r;  n.y = Math.sin(mid) * r;
+    n.size = sizeAt(n.depthLevel);
+    if (!n.children.length) return;
+    // give every child at least a small slice so deep branches stay clickable;
+    // soften huge leaf-count imbalances (a 152-question chapter shouldn't eat the whole circle)
+    var span = a1 - a0, n2 = n.children.length, minFrac = 0.5 / n2;
+    var weights = n.children.map(function(c){ return Math.pow(Math.max(c._leaves, 1), 0.6); });
+    var tot = weights.reduce(function(s,w){ return s+w; }, 0) || 1;
+    var fr = weights.map(function(w){ return Math.max(w/tot, minFrac); });
+    var frSum = fr.reduce(function(s,x){ return s+x; }, 0);   // normalize so slices fill exactly [a0,a1]
+    var a = a0;
+    n.children.forEach(function(c, i){
+      var cspan = span * (fr[i] / frSum);
+      layout(c, a, a + cspan); a += cspan;
+    });
+  }
+  function relayout(){ countLeaves(ROOT); layout(ROOT, -Math.PI/2 - Math.PI, -Math.PI/2 + Math.PI); }
+  relayout();
+
+  /* ── Camera (with a smooth target it eases toward) ── */
+  var cam = { x:0, y:0, s:0.34 }, camT = { x:0, y:0, s:0.34 };
+  var cv = document.getElementById("cv"), ctx = cv.getContext("2d"), DPR = Math.min(devicePixelRatio||1, 2);
+  var W=0, H=0;
+  function resize(){ W=cv.clientWidth; H=cv.clientHeight; cv.width=W*DPR; cv.height=H*DPR; ctx.setTransform(DPR,0,0,DPR,0,0); }
+  window.addEventListener("resize", resize); resize();
+
+  function w2s(wx, wy){ return [ (wx - cam.x)*cam.s + W/2, (wy - cam.y)*cam.s + H/2 ]; }
+  function s2w(sx, sy){ return [ (sx - W/2)/cam.s + cam.x, (sy - H/2)/cam.s + cam.y ]; }
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     COSMIC BACKDROP — randomly ALTERNATING galaxy scenes (crossfade), a shooting-
+     star layer, and gyroscope / pointer TILT-PARALLAX (move your phone to look
+     around the sky). To use your own uploaded galaxy photo, set BG_IMAGE_SRC to
+     its path — it joins the rotation as another scene automatically.
+  ───────────────────────────────────────────────────────────────────────── */
+  var BG_IMAGE_SRC = "assets/wordweaver/galaxy.png";   // user's Earth-horizon / Milky Way photo — joins the scene rotation
+  function clamp(v,a,b){ return v<a?a:v>b?b:v; }
+  var PARA = { x:0, y:0, tx:0, ty:0 };                 // eased tilt parallax, −1..1
+  function tilt(gx, gy){ PARA.tx = clamp(gx,-1,1); PARA.ty = clamp(gy,-1,1); }
+
+  // parallax star layers (different depths drift by different amounts)
+  var LAYERS = []; (function(){ var depths=[0.25,0.55,0.95], counts=[72,58,44];
+    depths.forEach(function(d,i){ var a=[]; for(var k=0;k<counts[i];k++) a.push({x:Math.random(),y:Math.random(),r:Math.random()*(0.5+d)+0.2,a:Math.random()*0.5+0.18,tw:Math.random()*6}); LAYERS.push({d:d,stars:a}); });
+  })();
+  // shooting stars
+  var SHOOT=[], shootT=0;
+  function spawnShoot(){ var L=Math.random()<0.5, y0=Math.random()*H*0.5; SHOOT.push({x:L?-40:W+40,y:y0,vx:(L?1:-1)*(6+Math.random()*5),vy:2.2+Math.random()*2.4,life:1,len:90+Math.random()*70}); }
+
+  // procedural galaxy "scenes", each painted once to an offscreen canvas then blitted
+  function nebula(c,x,y,r,col){ var g=c.createRadialGradient(x,y,0,x,y,r); g.addColorStop(0,col); g.addColorStop(1,"rgba(0,0,0,0)"); c.fillStyle=g; c.beginPath(); c.arc(x,y,r,0,7); c.fill(); }
+  function scatter(c,Wd,Hd,n,col){ for(var i=0;i<n;i++){ c.globalAlpha=Math.random()*0.6+0.12; c.fillStyle=col; c.beginPath(); c.arc(Math.random()*Wd,Math.random()*Hd,Math.random()*1.2+0.2,0,7); c.fill(); } c.globalAlpha=1; }
+  function paintCosmos(c,Wd,Hd){
+    var g=c.createRadialGradient(Wd*0.5,Hd*0.42,0,Wd*0.5,Hd*0.42,Wd*0.72); g.addColorStop(0,"#0e1430"); g.addColorStop(0.6,"#080a1a"); g.addColorStop(1,"#04050d");
+    c.fillStyle=g; c.fillRect(0,0,Wd,Hd);
+    nebula(c,Wd*0.32,Hd*0.34,Wd*0.42,"rgba(78,92,220,0.16)"); nebula(c,Wd*0.72,Hd*0.66,Wd*0.36,"rgba(40,150,180,0.13)");
+    scatter(c,Wd,Hd,560,"#cdd6ff");
+  }
+  function paintGalaxy(c,Wd,Hd){
+    var g=c.createRadialGradient(Wd*0.5,Hd*0.5,0,Wd*0.5,Hd*0.5,Wd*0.72); g.addColorStop(0,"#1b1234"); g.addColorStop(0.6,"#0a0816"); g.addColorStop(1,"#040309");
+    c.fillStyle=g; c.fillRect(0,0,Wd,Hd);
+    nebula(c,Wd*0.5,Hd*0.5,Wd*0.52,"rgba(150,80,230,0.15)");
+    var cx=Wd*0.5, cy=Hd*0.5; c.save(); c.translate(cx,cy); c.rotate(-0.5); c.scale(1,0.6);
+    for(var arm=0;arm<2;arm++){ for(var t=0;t<700;t++){ var th=t*0.05, rr=10*Math.exp(0.2*th); if(rr>Wd*0.52) break;
+      var ang=th+arm*Math.PI, jx=(Math.random()-0.5)*rr*0.12, jy=(Math.random()-0.5)*rr*0.12;
+      var x=Math.cos(ang)*rr+jx, y=Math.sin(ang)*rr+jy, a=Math.max(0,0.55-rr/(Wd*0.55));
+      c.globalAlpha=a*(0.4+Math.random()*0.6); c.fillStyle=Math.random()<0.3?"#ffe6a8":"#dcd0ff";
+      c.beginPath(); c.arc(x,y,Math.random()*1.4+0.3,0,7); c.fill(); } }
+    c.restore();
+    var cg=c.createRadialGradient(cx,cy,0,cx,cy,Wd*0.17); cg.addColorStop(0,"rgba(255,240,210,0.9)"); cg.addColorStop(0.4,"rgba(255,208,150,0.32)"); cg.addColorStop(1,"rgba(255,200,140,0)");
+    c.globalAlpha=1; c.fillStyle=cg; c.beginPath(); c.arc(cx,cy,Wd*0.17,0,7); c.fill();
+    scatter(c,Wd,Hd,340,"#e8ddff");
+  }
+  function paintPhoto(c,Wd,Hd,def){ var im=def.img; if(!im||!im.complete||!im.width) return paintCosmos(c,Wd,Hd); var s=Math.max(Wd/im.width,Hd/im.height),w=im.width*s,h=im.height*s; c.drawImage(im,(Wd-w)/2,(Hd-h)/2,w,h); c.fillStyle="rgba(5,6,14,0.26)"; c.fillRect(0,0,Wd,Hd); }
+  var BG_DEFS=[ {name:"cosmos",paint:paintCosmos}, {name:"violet galaxy",paint:paintGalaxy} ];
+  if (BG_IMAGE_SRC){ var _im=new Image(); _im.crossOrigin="anonymous"; var _d={name:"photo",img:_im,paint:paintPhoto}; _im.onload=function(){ SCENES.length=0; }; _im.src=BG_IMAGE_SRC; BG_DEFS.push(_d); }
+  var SCENES=[], sceneCur=Math.floor(Math.random()*BG_DEFS.length), sceneNext=-1, sceneFade=0, sceneClock=0, SCN_W=0, SCN_H=0;
+  function makeScenes(){ SCN_W=Math.max(64,Math.ceil(Math.max(W,H)*1.35)); SCN_H=SCN_W; SCENES=BG_DEFS.map(function(def){ var o=document.createElement("canvas"); o.width=SCN_W; o.height=SCN_H; def.paint(o.getContext("2d"),SCN_W,SCN_H,def); return {canvas:o}; }); if(sceneCur>=SCENES.length) sceneCur=0; }
+  function drawCosmos(dt){
+    if (W<2 || H<2) return;
+    PARA.x += (PARA.tx-PARA.x)*0.06; PARA.y += (PARA.ty-PARA.y)*0.06;
+    if (!SCENES.length || SCN_W < Math.max(W,H)) makeScenes();
+    sceneClock += dt;
+    if (sceneNext<0 && sceneClock>22000 && SCENES.length>1){ sceneClock=0; sceneNext=(sceneCur+1+Math.floor(Math.random()*(SCENES.length-1)))%SCENES.length; sceneFade=0; }
+    if (sceneNext>=0){ sceneFade+=dt/1800; if(sceneFade>=1){ sceneCur=sceneNext; sceneNext=-1; sceneFade=0; } }
+    ctx.fillStyle="#04050d"; ctx.fillRect(0,0,W,H);
+    var dx=(SCN_W-W)/2, dy=(SCN_H-H)/2, ox=PARA.x*46, oy=PARA.y*46;
+    function blit(i,al){ if(!SCENES[i])return; ctx.globalAlpha=al; ctx.drawImage(SCENES[i].canvas, -dx-ox, -dy-oy); }
+    blit(sceneCur, sceneNext>=0?(1-sceneFade):1); if(sceneNext>=0) blit(sceneNext, sceneFade); ctx.globalAlpha=1;
+    var now=performance.now();
+    LAYERS.forEach(function(Lr){ var lx=PARA.x*64*Lr.d, ly=PARA.y*64*Lr.d; Lr.stars.forEach(function(st){
+      var x=(((st.x*W+lx)%(W+40))+(W+40))%(W+40)-20, y=(((st.y*H+ly)%(H+40))+(H+40))%(H+40)-20;
+      ctx.globalAlpha=st.a*(0.6+0.4*Math.sin(now*0.001+st.tw)); ctx.fillStyle="#cdd6ff"; ctx.beginPath(); ctx.arc(x,y,st.r,0,7); ctx.fill();
+    }); }); ctx.globalAlpha=1;
+    shootT+=dt; if(shootT>1600+Math.random()*2800){ shootT=0; spawnShoot(); }
+    for(var i=SHOOT.length-1;i>=0;i--){ var s=SHOOT[i]; s.x+=s.vx; s.y+=s.vy; s.life-=0.012;
+      if(s.life<=0||s.x<-90||s.x>W+90||s.y>H+90){ SHOOT.splice(i,1); continue; }
+      var sp=Math.hypot(s.vx,s.vy), tx=s.x-s.vx/sp*s.len, ty=s.y-s.vy/sp*s.len;
+      var gr=ctx.createLinearGradient(s.x,s.y,tx,ty); gr.addColorStop(0,"rgba(255,255,255,"+(0.9*s.life)+")"); gr.addColorStop(1,"rgba(160,180,255,0)");
+      ctx.strokeStyle=gr; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(s.x,s.y); ctx.lineTo(tx,ty); ctx.stroke();
+      ctx.globalAlpha=s.life; ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(s.x,s.y,1.6,0,7); ctx.fill(); ctx.globalAlpha=1;
+    }
+  }
+  // gyroscope (mobile) + pointer (desktop) parallax
+  var gyroOn=false;
+  function startGyro(){ if(gyroOn)return; gyroOn=true; window.addEventListener("deviceorientation",function(e){ if(e.gamma==null&&e.beta==null)return; tilt((e.gamma||0)/30, ((e.beta||0)-40)/30); }); }
+  function maybeRequestGyro(){ try{ if(window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission==="function"){ DeviceOrientationEvent.requestPermission().then(function(s){ if(s==="granted") startGyro(); }).catch(function(){}); } else startGyro(); }catch(_){} }
+
+  var focusId = ROOT.id, hoverId = null;
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     LEVEL OF DETAIL — a node fades in as its on-screen size grows, so the map
+     "clusters" when zoomed out (only big parents show) and reveals detail as
+     you zoom in. Returns 0..1 visibility; 0 means cull.
+  ───────────────────────────────────────────────────────────────────────── */
+  function vis(n){
+    var ss = n.size * cam.s;                 // on-screen radius (px)
+    if (ss < 0.8) return 0;
+    return Math.max(0, Math.min(1, (ss - 1.2) / 7));
+  }
+
+  var _lastT = 0;
+  function draw(){
+    var nowT = performance.now(), dt = _lastT ? Math.min(60, nowT-_lastT) : 16; _lastT = nowT;
+    // ease camera
+    cam.x += (camT.x - cam.x) * 0.16;
+    cam.y += (camT.y - cam.y) * 0.16;
+    cam.s += (camT.s - cam.s) * 0.16;
+
+    ctx.clearRect(0,0,W,H);
+    drawCosmos(dt);   // alternating galaxy scenes + shooting stars + tilt parallax
+
+    // edges first
+    ctx.lineWidth = 1;
+    for (var i=0;i<NODES.length;i++){
+      var n = NODES[i]; if (!n.parentId) continue;
+      var p = byId[n.parentId];
+      var va = Math.min(vis(n), vis(p)); if (va <= 0) continue;
+      var s1 = w2s(p.x, p.y), s2 = w2s(n.x, n.y);
+      if (offscreen(s1) && offscreen(s2)) continue;
+      ctx.globalAlpha = va * 0.32 * (n.appear);
+      ctx.strokeStyle = COLOR[n.contentType] || "#5aa9ff";
+      ctx.beginPath(); ctx.moveTo(s1[0],s1[1]); ctx.lineTo(s2[0],s2[1]); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // nodes (parents under children: draw shallow→deep)
+    var order = NODES.slice().sort(function(a,b){ return a.depthLevel-b.depthLevel; });
+    for (var j=0;j<order.length;j++){
+      var nd = order[j];
+      // appear animation
+      var want = vis(nd) > 0 ? 1 : 0;
+      nd.appear += ((nd.parentId? want:1) - nd.appear) * 0.18;
+      var va2 = vis(nd) * (nd.appear>0.02?1:0); if (va2 <= 0) continue;
+      var sc = w2s(nd.x, nd.y); if (offscreen(sc, 80)) continue;
+      var rad = nd.size * cam.s * (0.4 + 0.6*nd.appear);
+      var baseCol = COLOR[nd.contentType] || "#5aa9ff";
+      var qNode = !!nd.q;
+      var col = (qNode && nd.done) ? "#7be08a" : baseCol;     // completed questions glow green (learning trajectory)
+      var isFocus = nd.id===focusId, isHover = nd.id===hoverId;
+
+      // glow
+      ctx.globalAlpha = va2;
+      if (rad > 4){
+        var gg = ctx.createRadialGradient(sc[0],sc[1],0, sc[0],sc[1], rad*2.6);
+        gg.addColorStop(0, hexA(col, .35)); gg.addColorStop(1, hexA(col, 0));
+        ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(sc[0],sc[1], rad*2.6, 0, 7); ctx.fill();
+      }
+      // body
+      ctx.beginPath(); ctx.arc(sc[0],sc[1], rad, 0, 7);
+      ctx.fillStyle = hexA(col, isFocus?1:0.92); ctx.fill();
+      if (isFocus || isHover){ ctx.lineWidth=2; ctx.strokeStyle="#fff"; ctx.globalAlpha=va2*(isFocus?0.95:0.6); ctx.stroke(); ctx.globalAlpha=va2; }
+      // question-node marker: an outer ring (orange) → a clickable flashcard; ✓ when completed
+      if (qNode && rad > 4){
+        ctx.lineWidth=1.5; ctx.strokeStyle=hexA(nd.done?"#7be08a":"#ff8a4c", isHover?0.95:0.7);
+        ctx.beginPath(); ctx.arc(sc[0],sc[1], rad+3.5, 0, 7); ctx.stroke();
+        if (nd.done && rad > 9){ ctx.globalAlpha=va2; ctx.fillStyle="#0c1422"; ctx.font="700 "+Math.min(rad*0.9,15)+"px system-ui"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText("✓", sc[0], sc[1]+0.5); }
+      }
+      // child-count ring when a collapsed cluster is small
+      if (!qNode && nd.children.length && rad < 13 && rad > 3){
+        ctx.lineWidth=1.5; ctx.strokeStyle=hexA(col,.5); ctx.beginPath(); ctx.arc(sc[0],sc[1], rad+3, 0, 7); ctx.stroke();
+      }
+      // label
+      var lblA = Math.max(0, Math.min(1, (rad-9)/10)) * va2;
+      if (lblA > 0.03){
+        ctx.globalAlpha = lblA;
+        ctx.fillStyle = "#f3f5fc";
+        var fs = Math.max(11, Math.min(18, rad*0.62));
+        ctx.font = (nd.depthLevel<=1?"700 ":"600 ")+fs+"px system-ui";
+        ctx.textAlign="center"; ctx.textBaseline="middle";
+        var txt = nd.title, maxw = Math.max(90, rad*4.2);
+        ctx.fillText(fit(txt, maxw, fs), sc[0], sc[1] + (rad>26? 0 : rad+fs*0.9));
+      }
+      ctx.globalAlpha = 1;
+    }
+
+  }
+  function offscreen(s, m){ m=m||0; return s[0]< -m || s[0]>W+m || s[1]< -m || s[1]>H+m; }
+  function hexA(hex, a){ var n=parseInt(hex.slice(1),16); return "rgba("+((n>>16)&255)+","+((n>>8)&255)+","+(n&255)+","+a+")"; }
+  function fit(t, maxw, fs){ if (ctx.measureText(t).width<=maxw) return t; while(t.length>1 && ctx.measureText(t+"…").width>maxw) t=t.slice(0,-1); return t+"…"; }
+  // resilient render loop — one thrown frame (e.g. a transient 0-size viewport) must not kill the animation
+  (function frame(){ try { if (W>1 && H>1) draw(); } catch(e){} requestAnimationFrame(frame); })();
+
+  /* ── Focus a node: smoothly center it and zoom so its children are readable ── */
+  function targetScaleFor(n){
+    // scale so this node's ring of children comfortably fills the viewport
+    var childR = n.children.length ? ringAt(n.depthLevel+1) - ringAt(n.depthLevel) : ringAt(n.depthLevel)*0.5+200;
+    var want = Math.min(W,H) * 0.42 / Math.max(childR, 120);
+    return Math.max(0.04, Math.min(4.5, want));
+  }
+  function focusNode(n, soft){
+    focusId = n.id;
+    camT.s = targetScaleFor(n);
+    // aim a touch past the node (toward its children) so they sit in view
+    var r = ringAt(n.depthLevel), rc = ringAt(n.depthLevel+1);
+    var aimR = n.children.length ? (r+rc)/2 : r;
+    camT.x = Math.cos(n.angle||0) * aimR;
+    camT.y = Math.sin(n.angle||0) * aimR;
+    if (n.depthLevel===0){ camT.x=0; camT.y=0; }
+    updateCard(n); updateCrumb(n);
+  }
+
+  /* ── UI: card + breadcrumb ── */
+  var card=document.getElementById("card"), cardKind=document.getElementById("cardKind"),
+      cardTitle=document.getElementById("cardTitle"), cardDesc=document.getElementById("cardDesc"),
+      cardExpand=document.getElementById("cardExpand"), cardUp=document.getElementById("cardUp"),
+      crumb=document.getElementById("crumb");
+  var cardOpen = document.getElementById("cardOpen");
+  function updateCard(n){
+    cardKind.textContent = (KINDLABEL[n.contentType] || n.contentType) + (n.q ? (n.done ? " · ✓ done" : "") : "");
+    cardKind.style.color = n.done ? "var(--step)" : COLOR[n.contentType];
+    cardTitle.textContent = n.title;
+    cardDesc.textContent = (n.q && n.prev) ? n.prev : (n.description || "—");
+    cardUp.style.display = n.parentId ? "" : "none";
+    cardExpand.dataset.id = n.id;
+    if (n.q){                                   // a flashcard question-node
+      cardOpen.style.display = ""; cardOpen.dataset.id = n.id;
+      cardExpand.style.display = "none";
+    } else {
+      cardOpen.style.display = "none"; cardExpand.style.display = "";
+      cardExpand.disabled = false;
+      cardExpand.textContent = n.children.length ? (n._aiKids? "✨ Break down further" : "↓ Open "+n.children.length+" inside") : "✨ Break it down";
+    }
+    card.classList.add("show");
+  }
+  cardOpen.onclick = function(){ var n=byId[this.dataset.id]; if(n) openFlashcard(n); };
+  function pathTo(n){ var p=[]; var c=n; while(c){ p.unshift(c); c=c.parentId?byId[c.parentId]:null; } return p; }
+  function updateCrumb(n){
+    var p = pathTo(n); crumb.innerHTML="";
+    p.forEach(function(node, i){
+      if (i) { var s=document.createElement("span"); s.className="sep"; s.textContent="›"; crumb.appendChild(s); }
+      var b=document.createElement("span"); b.className="cb"; b.textContent=node.title;
+      b.onclick=function(){ focusNode(node); };
+      crumb.appendChild(b);
+    });
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     DATA RULE (b) — dynamic decomposition. If a node has no predefined
+     children (or we want to go deeper), generate child nodes. This is the hook
+     where Inkling's AI plugs in; offline we synthesize sensible sub-nodes by
+     content type so the prototype is fully demonstrable.
+  ───────────────────────────────────────────────────────────────────────── */
+  function synth(n){
+    var k=n.contentType, T=n.title;
+    if (k==="problem") return [
+      {t:"Understand", k:"step", d:"Restate what's given and what's asked in “"+T+"”."},
+      {t:"Plan", k:"step", d:"Pick the rule or formula that applies."},
+      {t:"Solve", k:"step", d:"Carry out the algebra carefully."},
+      {t:"Check", k:"step", d:"Verify the result is reasonable."},
+      {t:"Final answer", k:"answer", d:"State the answer clearly."}
+    ];
+    if (k==="section"||k==="subsection") return [
+      {t:T+" · definition", k:"subsection", d:"The core idea, stated plainly."},
+      {t:T+" · worked example", k:"problem", d:"A representative problem to solve."},
+      {t:T+" · common mistake", k:"subsection", d:"What trips students up here."}
+    ];
+    if (k==="chapter") return [
+      {t:T.replace(/^\d+\s·\s/,"")+" · key idea", k:"section", d:"The big concept of this chapter."},
+      {t:T.replace(/^\d+\s·\s/,"")+" · practice", k:"section", d:"Where to practice it."}
+    ];
+    return [
+      {t:T+" — part A", k:"step", d:"First facet of this idea."},
+      {t:T+" — part B", k:"step", d:"Second facet of this idea."}
+    ];
+  }
+  function decompose(n){
+    if (n.children.length && n._aiKids){ /* allow growing leaves deeper */ }
+    if (n.children.length && !n._aiKids){ focusNode(n); return; }   // already has real children → just dive in
+    var made = synth(n); n._aiKids = true;
+    made.forEach(function(c){ build(c, n, n.depthLevel+1); c=n.children[n.children.length-1]; c.appear=0; });
+    relayout();
+    focusNode(n);
+  }
+  // (To use the real Inkling backend instead of synth(), POST {title,contentType}
+  //  to a decomposition route and map the returned items through build(); the
+  //  layout + render below need no changes.)
+
+  cardExpand.onclick = function(){
+    var n = byId[this.dataset.id]; if(!n) return;
+    if (n.children.length && !n._aiKids){ focusNode(n); return; }
+    var html = this.innerHTML; this.disabled=true; this.innerHTML='<span class="spin"></span>weaving…';
+    var btn=this;
+    setTimeout(function(){ decompose(n); btn.disabled=false; btn.innerHTML=html; updateCard(byId[n.id]); }, 260); // tiny delay = "thinking"
+  };
+  cardUp.onclick = function(){ var n=byId[cardExpand.dataset.id]; if(n&&n.parentId) focusNode(byId[n.parentId]); };
+
+  /* ── Hit-testing (topmost = smallest visible circle under the cursor) ── */
+  function hit(sx, sy){
+    var best=null, bestR=1e9;
+    for (var i=0;i<NODES.length;i++){
+      var n=NODES[i]; if (vis(n)<=0) continue;
+      var sc=w2s(n.x,n.y); var rad=Math.max(n.size*cam.s, 7);
+      var dx=sx-sc[0], dy=sy-sc[1];
+      if (dx*dx+dy*dy <= rad*rad && rad<bestR){ best=n; bestR=rad; }
+    }
+    return best;
+  }
+
+  /* ── Pointer: drag to pan, click to focus, wheel/pinch to zoom ── */
+  var down=false, moved=false, lastX=0, lastY=0, downX=0, downY=0;
+  cv.addEventListener("pointerdown", function(e){ down=true; moved=false; lastX=downX=e.clientX; lastY=downY=e.clientY; cv.setPointerCapture(e.pointerId); cv.classList.add("drag"); maybeRequestGyro(); });
+  cv.addEventListener("pointermove", function(e){
+    if (!down){ var h=hit(e.clientX,e.clientY); hoverId = h?h.id:null; cv.style.cursor = h?"pointer":"grab";
+      if (!gyroOn) tilt(e.clientX/W*2-1, e.clientY/H*2-1);   // desktop: cursor drives the sky parallax
+      showPeek(h, e.clientX, e.clientY);
+      return; }
+    hidePeek();
+    var dx=e.clientX-lastX, dy=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY;
+    if (Math.abs(e.clientX-downX)+Math.abs(e.clientY-downY) > 4) moved=true;
+    cam.x -= dx/cam.s; cam.y -= dy/cam.s; camT.x=cam.x; camT.y=cam.y;
+  });
+  cv.addEventListener("pointerleave", function(){ hidePeek(); });
+  cv.addEventListener("pointerup", function(e){
+    down=false; cv.classList.remove("drag"); cv.style.cursor="grab";
+    if (!moved){ var n=hit(e.clientX,e.clientY); if (n){ if (n.q) openFlashcard(n); else focusNode(n); } }
+  });
+  // ── Hover preview of a flashcard question; click a question-node to open it ──
+  var peek=document.getElementById("peek"), peekBody=document.getElementById("peekBody");
+  function showPeek(n, x, y){
+    if (!n || !n.prev){ hidePeek(); return; }
+    peekBody.textContent = n.prev;
+    peek.style.display="block";
+    var pw=Math.min(300, W-24), px=Math.min(x+16, W-pw-10), py=y+18;
+    if (py > H-130) py = y - 130;
+    peek.style.left=Math.max(10,px)+"px"; peek.style.top=Math.max(10,py)+"px";
+    requestAnimationFrame(function(){ peek.classList.add("show"); });
+  }
+  function hidePeek(){ peek.classList.remove("show"); peek.style.display="none"; }
+  function openFlashcard(n){
+    if (!n.q) return;
+    hidePeek();
+    // Embedded in the Inkling app → ask the app to open the flashcard overlay (stay in-app).
+    if (window.parent && window.parent !== window){
+      try { window.parent.postMessage({ type:"inkling-open-flashcard", q:n.q }, "*"); return; } catch(_){}
+    }
+    var url = "quiz.html?q=" + encodeURIComponent(n.q);
+    try { (window.top || window).location.href = url; } catch(_){ window.location.href = url; }
+  }
+  function zoomAt(sx, sy, factor){
+    var before = s2w(sx, sy);
+    camT.s = Math.max(0.04, Math.min(5, camT.s*factor)); cam.s = camT.s;   // apply now for anchor math
+    var after = s2w(sx, sy);
+    camT.x += before[0]-after[0]; camT.y += before[1]-after[1]; cam.x=camT.x; cam.y=camT.y;
+  }
+  cv.addEventListener("wheel", function(e){ e.preventDefault(); zoomAt(e.clientX, e.clientY, e.deltaY<0?1.12:1/1.12); }, {passive:false});
+  // pinch
+  var pinch=null;
+  cv.addEventListener("touchmove", function(e){
+    if (e.touches.length===2){ e.preventDefault();
+      var a=e.touches[0], b=e.touches[1], d=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY), mx=(a.clientX+b.clientX)/2, my=(a.clientY+b.clientY)/2;
+      if (pinch) zoomAt(mx,my, d/pinch); pinch=d;
+    }
+  }, {passive:false});
+  cv.addEventListener("touchend", function(){ pinch=null; });
+
+  document.getElementById("zin").onclick=function(){ zoomAt(W/2,H/2,1.5); };
+  document.getElementById("zout").onclick=function(){ zoomAt(W/2,H/2,1/1.5); };
+  document.getElementById("home").onclick=function(){ focusNode(ROOT); };
+
+  // start focused on the whole subject
+  focusNode(ROOT);
+})();
+</script>
+</body>
+</html>

@@ -86,6 +86,51 @@ function fig(...inner) {
     `${GRID}${inner.join("")}</svg>`;
 }
 
+/**
+ * A 6-panel "select all that are functions" composite (vertical line test).
+ * Recreates a multi-graph homework item in one figure; showAnswer adds ✓/✗.
+ */
+function vltSelectAll(showAnswer) {
+  const S = 8, PW = 100, GAP = 6, cols = 2, rows = 3;
+  const W = cols * PW + (cols + 1) * GAP, H = rows * PW + (rows + 1) * GAP;
+  const items = [
+    { kind: "fn",  f: (x) => 2 * Math.sin(Math.PI * x / 2) },   // 1 sine wave
+    { kind: "fn",  f: (x) => -2.8 * x + 1.7 },                  // 2 steep line
+    { kind: "fn",  f: (x) => 6 * x * x * x + 9 * x * x - 2 },   // 3 cubic
+    { kind: "fn",  f: () => -2 },                               // 4 horizontal line
+    { kind: "ellipse", cx: -0.7, cy: -2, rx: 1.2, ry: 1.0 },   // 5 ellipse
+    { kind: "fnx", g: (y) => y * y - 2 }                        // 6 sideways parabola
+  ];
+  const isFn = [true, true, true, true, false, false];
+  let out = "";
+  items.forEach((it, i) => {
+    const col = i % cols, row = (i / cols) | 0;
+    const ox = GAP + col * (PW + GAP), oy = GAP + row * (PW + GAP);
+    const cx = ox + PW / 2, cy = oy + PW / 2;
+    const LX = (x) => (cx + x * S).toFixed(1);
+    const LY = (y) => (cy - y * S).toFixed(1);
+    out += `<rect x="${ox}" y="${oy}" width="${PW}" height="${PW}" fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.14)" rx="6"/>`;
+    out += `<line x1="${ox + 6}" y1="${LY(0)}" x2="${ox + PW - 6}" y2="${LY(0)}" stroke="rgba(255,255,255,0.35)"/>`;
+    out += `<line x1="${LX(0)}" y1="${oy + 6}" x2="${LX(0)}" y2="${oy + PW - 6}" stroke="rgba(255,255,255,0.35)"/>`;
+    const trace = (pts) => { let d = "", pen = true; for (const [x, y] of pts) { if (x == null) { pen = true; continue; } d += (pen ? "M" : "L") + LX(x) + " " + LY(y) + " "; pen = false; } return `<path d="${d.trim()}" fill="none" stroke="#3b82f6" stroke-width="2"/>`; };
+    if (it.kind === "fn") {
+      const pts = []; for (let x = -4.7; x <= 4.7; x += 0.08) { const y = it.f(x); pts.push((isFinite(y) && y >= -4.7 && y <= 4.7) ? [x, y] : [null]); }
+      out += trace(pts);
+    } else if (it.kind === "fnx") {
+      const pts = []; for (let y = -4.7; y <= 4.7; y += 0.08) { const x = it.g(y); pts.push((isFinite(x) && x >= -4.7 && x <= 4.7) ? [x, y] : [null]); }
+      out += trace(pts);
+    } else if (it.kind === "ellipse") {
+      out += `<ellipse cx="${LX(it.cx)}" cy="${LY(it.cy)}" rx="${(it.rx * S).toFixed(1)}" ry="${(it.ry * S).toFixed(1)}" fill="none" stroke="#3b82f6" stroke-width="2"/>`;
+    }
+    out += `<text x="${ox + 8}" y="${oy + 16}" fill="rgba(255,255,255,0.85)" font-size="12" font-family="system-ui" font-weight="700">${i + 1}</text>`;
+    if (showAnswer) {
+      const ok = isFn[i];
+      out += `<text x="${ox + PW - 8}" y="${oy + 17}" text-anchor="end" font-size="15" font-family="system-ui" font-weight="800" fill="${ok ? "#22c55e" : "#ef4444"}">${ok ? "✓" : "✗"}</text>`;
+    }
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block;background:rgba(255,255,255,0.03);border-radius:8px">${out}</svg>`;
+}
+
 const VLT_Q = "Does this graph represent y as a function of x?";
 const HLT_Q = "Is the function shown one-to-one?";
 

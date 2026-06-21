@@ -1,0 +1,1844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0f1a" />
+  <title>Flashcards — Inkling</title>
+  <link rel="icon" href="/icons/inkling-icon.svg" type="image/svg+xml" />
+  <style>
+    /* Self-hosted KaTeX fonts for MathLive (pinned 0.110.0) — bundled so math input never depends on a CDN font fetch */
+    @font-face{font-family:KaTeX_AMS;font-weight:400;font-style:normal;src:url(/vendor/mathlive/fonts/KaTeX_AMS-Regular.woff2?v=0110) format("woff2")}
+    @font-face{font-family:KaTeX_Caligraphic;font-weight:700;font-style:normal;src:url(/vendor/mathlive/fonts/KaTeX_Caligraphic-Bold.woff2?v=0110) format("woff2")}
+    @font-face{font-family:KaTeX_Caligraphic;font-weight:400;font-style:normal;src:url(/vendor/mathlive/fonts/KaTeX_Caligraphic-Regular.woff2?v=0110) format("woff2")}
+    @font-face{font-family:KaTeX_Fraktur;font-weight:700;font-style:normal;src:url(/vendor/mathlive/fonts/KaTeX_Fraktur-Bold.woff2?v=0110) format("woff2")}
+    @font-face{font-family:KaTeX_Fraktur;font-weight:400;font-style:normal;src:url(/vendor/mathlive/fonts/KaTeX_Fraktur-Regular.woff2?v=0110) format("woff2")}
+    @font-face{font-family:KaTeX_Main;font-weight:700;font-style:normal;src:url(/vendor/mathlive/fonts/KaTeX_Main-Bold.woff2?v=0110) format("woff2")}
+    @font-face{font-family:KaTeX_Main;font-weight:700;font-style:italic;src:url(/vendor/mathlive/fonts/KaTeX_Main-BoldItalic.woff2?v=0110) format("woff2")}
+    @font-face{font-family:KaTeX_Main;font-weight:400;font-style:italic;src:url(/vendor/mathlive/fonts/KaTeX_Main-Italic.woff2?v=0110) format("woff2")}
+    @font-face{font-family:KaTeX_Main;font-weight:400;font-style:normal;src:url(/vendor/mathlive/fonts/KaTeX_Main-Regular.woff2?v=0110) format("woff2")}
+    @font-face{font-family:KaTeX_Math;font-weight:700;font-style:italic;src:url(/vendor/mathlive/fonts/KaTeX_Math-BoldItalic.woff2?v=0110) format("woff2")}
+    @font-face{font-family:KaTeX_Math;font-weight:400;font-style:italic;src:url(/vendor/mathlive/fonts/KaTeX_Math-Italic.woff2?v=0110) format("woff2")}
+    @font-face{font-family:"KaTeX_SansSerif";font-weight:700;font-style:normal;src:url(/vendor/mathlive/fonts/KaTeX_SansSerif-Bold.woff2?v=0110) format("woff2")}
+    @font-face{font-family:"KaTeX_SansSerif";font-weight:400;font-style:italic;src:url(/vendor/mathlive/fonts/KaTeX_SansSerif-Italic.woff2?v=0110) format("woff2")}
+    @font-face{font-family:"KaTeX_SansSerif";font-weight:400;font-style:normal;src:url(/vendor/mathlive/fonts/KaTeX_SansSerif-Regular.woff2?v=0110) format("woff2")}
+    @font-face{font-family:KaTeX_Script;font-weight:400;font-style:normal;src:url(/vendor/mathlive/fonts/KaTeX_Script-Regular.woff2?v=0110) format("woff2")}
+    @font-face{font-family:KaTeX_Size1;font-weight:400;font-style:normal;src:url(/vendor/mathlive/fonts/KaTeX_Size1-Regular.woff2?v=0110) format("woff2")}
+    @font-face{font-family:KaTeX_Size2;font-weight:400;font-style:normal;src:url(/vendor/mathlive/fonts/KaTeX_Size2-Regular.woff2?v=0110) format("woff2")}
+    @font-face{font-family:KaTeX_Size3;font-weight:400;font-style:normal;src:url(/vendor/mathlive/fonts/KaTeX_Size3-Regular.woff2?v=0110) format("woff2")}
+    @font-face{font-family:KaTeX_Size4;font-weight:400;font-style:normal;src:url(/vendor/mathlive/fonts/KaTeX_Size4-Regular.woff2?v=0110) format("woff2")}
+    @font-face{font-family:KaTeX_Typewriter;font-weight:400;font-style:normal;src:url(/vendor/mathlive/fonts/KaTeX_Typewriter-Regular.woff2?v=0110) format("woff2")}
+    *{box-sizing:border-box}
+    html,body{margin:0}
+    body{
+      font:400 16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+      height:100dvh;display:flex;flex-direction:column;overflow:hidden;
+      --bg:#0b0f1a;--surface:#121a2e;--line:rgba(255,255,255,.13);--text:#e6edf3;--muted:#8b949e;
+      --pill:rgba(158,203,255,.16);--pilltx:#9ecbff;--earn:rgba(34,197,94,.16);--earntx:#4ade80;
+      --ok:#22c55e;--bad:#ef4444;--accent:#5b9bf0;--grid:rgba(255,255,255,.09);--axis:rgba(255,255,255,.5);--curve:#5b9bf0;
+      background:var(--bg);color:var(--text);
+      padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)
+    }
+    body[data-theme=light]{--bg:#f4f7fc;--surface:#fff;--line:rgba(0,0,0,.13);--text:#0d1117;--muted:#5b6470;--pill:rgba(31,111,235,.12);--pilltx:#1f6feb;--earn:rgba(22,128,61,.12);--earntx:#15803d;--grid:rgba(0,0,0,.08);--axis:rgba(0,0,0,.45);--curve:#1f6feb}
+    header{flex:0 0 auto;padding:12px 15px 10px;border-bottom:.5px solid var(--line)}
+    .row{display:flex;align-items:flex-start;gap:10px}
+    .ic{display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:9px;border:.5px solid var(--line);background:var(--surface);color:var(--text);cursor:pointer;font-size:17px;flex:0 0 auto}
+    .title{flex:1;font-size:16px;font-weight:500;padding-top:7px}
+    .badges{display:flex;flex-direction:column;gap:6px;align-items:flex-end;flex:0 0 auto}
+    .pts{background:var(--pill);color:var(--pilltx);border-radius:999px;padding:6px 13px;font-size:13px;font-weight:500;white-space:nowrap}
+    .earned{background:var(--earn);color:var(--earntx);border-radius:999px;padding:5px 12px;font-size:12px;font-weight:500;white-space:nowrap}
+    .sub{margin-top:11px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .setrow{margin-top:9px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+    .setrow .slbl{font-size:12px;opacity:.6;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+    .setbtn{background:var(--surface);border:.5px solid var(--line);border-radius:8px;padding:6px 13px;color:var(--text);font-size:13px;font-weight:600;cursor:pointer}
+    .setbtn.active{background:var(--accent,#6ea8fe);border-color:var(--accent,#6ea8fe);color:#0b1220}
+    .setbtn.newq{margin-left:auto;opacity:.85}
+    .arrow{display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:9px;border:.5px solid var(--line);background:var(--surface);color:var(--text);font:500 20px system-ui;cursor:pointer;flex:0 0 auto}
+    .arrow[disabled]{opacity:.38;cursor:default}
+    .seldrop{position:relative;display:inline-block}
+    .sel{display:inline-flex;align-items:center;gap:8px;background:var(--surface);border:.5px solid var(--line);border-radius:9px;padding:8px 13px;color:var(--text);font-size:14px;font-weight:500;cursor:pointer}
+    .menu{position:absolute;top:calc(100% + 6px);left:0;background:var(--surface);border:.5px solid var(--line);border-radius:11px;padding:6px;max-height:58vh;overflow-y:auto;z-index:50;min-width:130px;display:none;box-shadow:0 14px 34px rgba(0,0,0,.45)}
+    .menu.open{display:block}
+    .menu button{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;background:transparent;color:var(--text);border:0;border-radius:7px;padding:9px 12px;font:500 14px system-ui;cursor:pointer}
+    .menu button.cur{background:var(--pill);color:var(--pilltx)}
+    .menu .tag{font-size:11px;color:var(--muted)}
+    main{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:15px}
+    .prompt{margin:0 0 16px;font-size:15px;line-height:1.6}
+    .opt{display:flex;align-items:center;gap:12px;padding:13px 13px;margin:9px 0;border:.5px solid var(--line);border-radius:11px;background:var(--surface)}
+    .opt.ok{background:rgba(34,197,94,.12);box-shadow:inset 0 0 0 1.5px var(--ok);border-color:transparent}
+    .opt.bad{background:rgba(239,68,68,.12);box-shadow:inset 0 0 0 1.5px var(--bad);border-color:transparent}
+    .opt input{width:21px;height:21px;flex:0 0 auto;cursor:pointer;accent-color:var(--accent)}
+    .otext{flex:1;font-size:16px}
+    .qmedia{flex:0 0 auto;cursor:pointer}
+    .qmedia.gfx{width:148px;background:var(--bg);border:.5px solid var(--line);border-radius:9px}
+    .dt{border-collapse:collapse;font:500 14px system-ui}
+    .dt th,.dt td{border:.5px solid var(--line);padding:5px 14px;text-align:center;min-width:34px}
+    .dt th{font-style:italic;color:var(--muted);font-weight:500}
+    .dt.plain th{font-style:normal;font-weight:600;color:var(--text)}
+    .hgrid{display:grid;gap:10px;margin-top:4px}
+    .hcell{display:flex;flex-direction:column;align-items:center;gap:9px;border:.5px solid var(--line);border-radius:11px;padding:10px 7px;background:var(--surface);min-width:0}
+    .hcell.ok{background:rgba(34,197,94,.12);box-shadow:inset 0 0 0 1.5px var(--ok);border-color:transparent}
+    .hcell.bad{background:rgba(239,68,68,.12);box-shadow:inset 0 0 0 1.5px var(--bad);border-color:transparent}
+    .hcell .qmedia{width:100%}
+    .hpick{display:flex;align-items:center;gap:6px}
+    .hpick input{width:22px;height:22px;accent-color:var(--accent);cursor:pointer}
+    .hgrid .dt{font-size:11.5px;width:100%}
+    .hgrid .dt th,.hgrid .dt td{padding:3px 4px;min-width:0}
+    .zoom{margin-left:auto;display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;border:.5px solid var(--line);background:var(--surface);color:var(--muted);font-size:15px;cursor:pointer;flex:0 0 auto}
+    .mark{flex:0 0 auto;font-size:18px;width:20px;text-align:center}
+    .empty{color:var(--muted);line-height:1.6;padding:20px 4px}
+    .grow{display:flex;align-items:flex-start;gap:8px;margin:4px 0 16px}
+    .grow .qmedia.gfx{background:var(--bg)}
+    .tscroll{overflow-x:auto;margin:6px 0 16px}
+    .matchwrap{display:flex;gap:20px;flex-wrap:wrap}
+    .mleft{display:flex;flex-direction:column;gap:11px;flex:1;min-width:210px}
+    .mright{display:flex;flex-direction:column;gap:9px;flex:1;min-width:160px;color:var(--muted)}
+    .mrow{display:flex;align-items:center;gap:10px}
+    .msel{font:500 14px system-ui;padding:7px 8px;border-radius:8px;border:.5px solid var(--line);background:var(--surface);color:var(--text);min-width:56px;cursor:pointer}
+    .meq{font-size:16px;flex:1}
+    .mopt{font-size:15px}
+    .mgfx{display:flex;align-items:center;gap:8px}
+    .mlbl{font-size:15px;min-width:16px;color:var(--text)}
+    .mright .qmedia.gfx{width:120px;background:var(--bg);border:.5px solid var(--line);border-radius:8px}
+    .mrow.ok .meq{color:var(--ok)} .mrow.bad .meq{color:var(--bad)}
+    .lmrow{flex-direction:column;align-items:flex-start;gap:7px;margin-bottom:18px}
+    .lmtop{display:flex;align-items:center;gap:8px}
+    .lmrow .msel{min-width:140px;font-weight:500}
+    .lmrow.ok .msel{box-shadow:inset 0 0 0 1.5px var(--ok);border-color:transparent}
+    .lmrow.bad .msel{box-shadow:inset 0 0 0 1.5px var(--bad);border-color:transparent}
+    .ask{font-size:15px;margin:0 0 10px}
+    .inwrap{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .inlabel{font-size:16px}
+    .ansin{font:500 16px system-ui;padding:9px 12px;border-radius:9px;border:.5px solid var(--line);background:var(--surface);color:var(--text);width:150px;outline:none}
+    .ansin.ok{box-shadow:inset 0 0 0 1.5px var(--ok);border-color:transparent}
+    .ansin.bad{box-shadow:inset 0 0 0 1.5px var(--bad);border-color:transparent}
+    /* MathLive math-field answer boxes (2D math input) */
+    math-field.mathfield{font-size:17px;min-width:150px;padding:7px 11px;border-radius:9px;border:.5px solid var(--line);background:var(--surface);color:var(--text);outline:none;display:inline-block;vertical-align:middle}
+    math-field.mathfield:focus,math-field.mathfield:focus-within{border-color:var(--accent)}
+    math-field.mathfield.ok{box-shadow:inset 0 0 0 1.5px var(--ok);border-color:transparent}
+    math-field.mathfield.bad{box-shadow:inset 0 0 0 1.5px var(--bad);border-color:transparent}
+    math-field.mathfield::part(virtual-keyboard-toggle),math-field.mathfield::part(menu-toggle){display:none}
+    .fsel{font:500 15px system-ui;padding:8px 10px;border-radius:9px;border:.5px solid var(--line);background:var(--surface);color:var(--text);cursor:pointer}
+    .fsel.ok{box-shadow:inset 0 0 0 1.5px var(--ok);border-color:transparent}
+    .fsel.bad{box-shadow:inset 0 0 0 1.5px var(--bad);border-color:transparent}
+    .mathkb{display:flex;flex-wrap:wrap;gap:7px;margin-top:16px;padding-top:13px;border-top:.5px solid var(--line)}
+    .mathkb button{min-width:48px;height:42px;border:.5px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text);font-size:16px;cursor:pointer}
+    .mathkb button:active{background:var(--accent);color:#fff}
+    .mathkb .kbtag{flex-basis:100%;font-size:12px;color:var(--muted);margin:-4px 0 2px}
+    /* Standardized math keyboard (tabbed grid, mirrors the school MathQuill pad) */
+    .mathpad{margin:10px 0 4px;padding-top:10px;border-top:.5px solid var(--line);max-width:420px}
+    .mathpad.mp-closed{display:none}
+    .mp-tabs{display:flex;align-items:center;gap:2px;flex-wrap:wrap;margin-bottom:9px;border-bottom:.5px solid var(--line)}
+    .mp-x{margin-left:auto;border:none;background:none;color:var(--muted);font-size:18px;line-height:1;cursor:pointer;padding:4px 6px}
+    .mp-x:active{color:var(--text)}
+    .mp-tab{padding:6px 10px;border:none;background:none;color:var(--muted);font-size:14px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+    .mp-tab.on{color:var(--accent);border-bottom-color:var(--accent)}
+    .mp-grid{display:none;gap:5px;grid-template-columns:repeat(var(--cols,6),1fr)}
+    .mp-grid.on{display:grid}
+    .mp-grid-abc.on{display:flex;flex-direction:column;gap:5px}
+    .mp-row{display:flex;gap:5px}
+    .mp-key{height:44px;border:.5px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text);font-size:15px;line-height:1;cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center}
+    .mp-key:active{background:var(--accent);color:#fff}
+    .mp-key sup{font-size:9px;vertical-align:super} .mp-key sub{font-size:9px;vertical-align:sub}
+    .mp-row .mp-key{flex:1 1 0;min-width:0}
+    .mp-space{flex:4 1 0}
+    .mp-arrows{display:flex;gap:4px}
+    .mp-arrows .mp-key{flex:1 1 0}
+    .mp-fn{color:var(--accent);font-weight:600}
+    footer{flex:0 0 auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 15px;border-top:.5px solid var(--line)}
+    .btn{display:inline-flex;align-items:center;gap:6px;background:var(--surface);color:var(--text);border:.5px solid var(--line);border-radius:10px;padding:10px 17px;font-size:14px;font-weight:500;cursor:pointer}
+    .btn.primary{background:var(--accent);color:#fff;border-color:transparent}
+    .btn[disabled]{opacity:.38;cursor:default}
+    .score{font-size:15px;font-weight:500;margin-left:2px}
+    .zoomov{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.86);display:flex;align-items:center;justify-content:center;padding:22px}
+    .zoombox{width:min(92vw,520px);background:var(--surface);border:.5px solid var(--line);border-radius:14px;padding:12px}
+    em{font-style:italic}
+    .genbtn{display:inline-flex;align-items:center;gap:6px;background:linear-gradient(180deg,#a855f7,#7c3aed);border:0;border-radius:9px;padding:8px 13px;color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+    .genbtn:active{transform:scale(.96)}
+    .genbar{margin-top:9px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .geninput{flex:1 1 220px;min-width:160px;height:38px;padding:0 12px;border-radius:10px;border:.5px solid var(--line);background:var(--surface);color:var(--text);font:500 14px system-ui;outline:none}
+    .gengo{flex:0 0 auto;height:38px;padding:0 16px;border-radius:10px;border:0;background:linear-gradient(180deg,#a855f7,#7c3aed);color:#fff;font:800 13px system-ui;cursor:pointer}
+    .gengo[disabled]{opacity:.5;cursor:default}
+    .gennote{flex:1 1 100%;font-size:12px;color:var(--muted)}
+    .gennote.err{color:#fca5a5}.gennote.ok{color:#86efac}
+    /* Study-set home (boxes) — the landing view: one dismissible box per set. */
+    #home{display:none;flex:1 1 auto;overflow-y:auto;padding:16px 16px 28px}
+    body.quiz-home #home{display:block}
+    body.quiz-home main,body.quiz-home footer,body.quiz-home .sub,body.quiz-home .setrow{display:none !important}
+    .home-head{margin:2px 2px 14px}
+    .home-title{font:800 22px system-ui;margin:0 0 4px}
+    .home-sub{font-size:13px;color:var(--muted);margin:0;line-height:1.5}
+    .home-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+    .homebox{position:relative;text-align:left;border:.5px solid var(--line);border-radius:14px;padding:14px 13px 13px;
+      background:linear-gradient(160deg,rgba(124,58,237,.16),var(--surface));color:var(--text);cursor:pointer;
+      display:flex;flex-direction:column;gap:5px;min-height:104px;transition:transform .1s ease,border-color .2s ease}
+    .homebox:hover{border-color:var(--accent,#6ea8fe);transform:translateY(-2px)}
+    .homebox--gen{background:linear-gradient(160deg,rgba(168,85,247,.22),var(--surface))}
+    .homebox--add{align-items:center;justify-content:center;text-align:center;border-style:dashed;background:transparent;color:var(--muted);font-weight:700}
+    .homebox--soon{opacity:.45;cursor:default;background:var(--surface)}
+    .homebox--soon:hover{transform:none;border-color:var(--line)}
+    /* AI explanation panel — a bottom sheet that pops up with the worked solution. */
+    .explain-panel{position:fixed;left:0;right:0;bottom:0;z-index:300;display:flex;flex-direction:column;
+      max-height:64vh;background:var(--surface);border-top:1px solid var(--line);
+      border-radius:16px 16px 0 0;box-shadow:0 -14px 40px rgba(0,0,0,.5)}
+    .explain-panel.hidden{display:none}
+    .explain-head{display:flex;align-items:center;justify-content:space-between;padding:12px 15px;border-bottom:.5px solid var(--line);font:800 15px system-ui;color:var(--text)}
+    .explain-x{border:0;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;line-height:1}
+    .explain-body{flex:1 1 auto;overflow-y:auto;padding:13px 15px;display:flex;flex-direction:column;gap:10px}
+    .ex-msg{font:500 14px/1.55 system-ui;white-space:pre-wrap;border-radius:12px;padding:10px 12px;max-width:92%}
+    .ex-msg--ai{background:rgba(124,58,237,.14);border:.5px solid rgba(168,85,247,.4);color:var(--text);align-self:flex-start}
+    .ex-msg--me{background:var(--accent,#6ea8fe);color:#0b1220;align-self:flex-end;font-weight:600}
+    .ex-msg--note{font-size:12px;color:var(--muted);align-self:flex-start;padding:0 2px;background:none;border:0}
+    .explain-foot{display:flex;gap:8px;padding:10px 12px;border-top:.5px solid var(--line)}
+    .explain-input{flex:1 1 auto;height:38px;padding:0 12px;border-radius:10px;border:.5px solid var(--line);background:var(--bg,#0b0f1a);color:var(--text);font:500 14px system-ui;outline:none}
+    .explain-send{flex:0 0 auto;height:38px;padding:0 16px;border-radius:10px;border:0;background:linear-gradient(180deg,#a855f7,#7c3aed);color:#fff;font:800 13px system-ui;cursor:pointer}
+    .explain-send[disabled]{opacity:.5;cursor:default}
+    .homebox .hsec{font:800 17px system-ui}
+    .homebox .htitle{font-size:12.5px;line-height:1.35;opacity:.92;flex:1 1 auto}
+    .homebox .hmeta{font-size:11px;color:var(--muted);margin-top:2px}
+    .homebox .hbar{height:5px;border-radius:99px;background:rgba(255,255,255,.12);overflow:hidden;margin-top:3px}
+    .homebox .hbar>i{display:block;height:100%;background:var(--accent,#6ea8fe)}
+    .homebox .hx{position:absolute;top:6px;right:7px;width:22px;height:22px;border-radius:50%;border:0;
+      background:rgba(0,0,0,.35);color:#e6edf3;font:700 12px system-ui;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center}
+    .homebox .hx:hover{background:#dc2626}
+  </style>
+  <script src="/inkling-config.js"></script>
+  <!-- MathLive (self-hosted, pinned 0.110.0): 2D math input — stacked fractions, editable exponents.
+       Loaded blocking so fontsDirectory is set BEFORE any <math-field> renders (avoids the broken auto font path). -->
+  <script src="/vendor/mathlive/mathlive.min.js"></script>
+  <script>
+    // We provide the KaTeX @font-face ourselves (below), so tell MathLive not to load fonts itself.
+    (function(){ var M = customElements.get("math-field"); if (M){ M.fontsDirectory = null; M.soundsDirectory = null; } })();
+  </script>
+</head>
+<body data-theme="dark">
+  <header>
+    <div class="row">
+      <button class="ic" id="theme" aria-label="Toggle light or dark theme">☀️</button>
+      <button class="ic" id="homeBtn" aria-label="All study sets" title="All study sets">📚</button>
+      <span class="title" id="deckTitle">1.1 · Functions and Function Notation</span>
+      <span class="badges">
+        <span class="pts">200 pts</span>
+        <span class="earned" id="earned">🏆 Earned 0 / 200</span>
+      </span>
+    </div>
+    <div class="sub">
+      <select id="deckPick" class="sel" aria-label="Section" style="min-width:64px;cursor:pointer"></select>
+      <button class="arrow" id="prev" aria-label="Previous question">‹</button>
+      <div class="seldrop">
+        <button class="sel" id="sel" aria-haspopup="true">1.1.1 ▾</button>
+        <div class="menu" id="menu" role="menu"></div>
+      </div>
+      <button class="arrow" id="nextq" aria-label="Next question">›</button>
+      <button class="genbtn" id="genBtn" type="button" title="Generate a new set with Inkling AI">✨ Generate</button>
+    </div>
+    <div class="setrow" id="setRow" style="display:none"><span class="slbl">Sets</span></div>
+    <div class="genbar" id="genBar" style="display:none">
+      <input class="geninput" id="genTopic" type="text" placeholder="Topic for a new AI set… e.g. Quadratic formula" maxlength="120" />
+      <button class="gengo" id="genGo" type="button">Generate</button>
+      <span class="gennote" id="genNote"></span>
+    </div>
+  </header>
+  <section id="home">
+    <div class="home-head">
+      <h2 class="home-title">📚 Study sets</h2>
+      <p class="home-sub">Pick a set to practice. Tap ✕ to hide one you don't need — ✨ Generate adds your own.</p>
+    </div>
+    <div id="homeGrid" class="home-grid"></div>
+  </section>
+  <main>
+    <p class="prompt" id="prompt"></p>
+    <div id="opts"></div>
+  </main>
+  <footer>
+    <button class="btn primary" id="submit">Submit</button>
+    <button class="btn" id="answer" title="Show the answer">🔑 Show answer</button>
+    <button class="btn" id="hintBtn" title="Get a hint (without the answer)">💡 Hint</button>
+    <button class="btn" id="explainBtn" title="AI worked solution">🤖 Explain</button>
+    <span class="score" id="score"></span>
+    <button class="btn" id="next" style="margin-left:auto">Next question →</button>
+  </footer>
+  <div id="explainPanel" class="explain-panel hidden" aria-label="Inkling explanation">
+    <div class="explain-head"><span>🤖 Inkling explains</span><button class="explain-x" id="explainClose" aria-label="Close">✕</button></div>
+    <div class="explain-body" id="explainBody"></div>
+    <div class="explain-foot">
+      <input class="explain-input" id="explainInput" type="text" placeholder="Ask a follow-up…" maxlength="240" />
+      <button class="explain-send" id="explainSend" type="button">Ask</button>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    // Dedicated graph for the WebWork "estimate the ARC" wave (x from -1..5, y from 0..10).
+    function waveGraph(){
+      var SX=15, SY=9, OX=22, OYzero=105; // y=0 line at 105, y=10 at 15
+      function sx(x){ return (OX + x*SX).toFixed(1); } function sy(y){ return (OYzero - y*SY).toFixed(1); }
+      var g="";
+      for (var x=-1;x<=5;x++){ g+='<line x1="'+sx(x)+'" y1="'+sy(0)+'" x2="'+sx(x)+'" y2="'+sy(10)+'" style="stroke:var(--grid);stroke-width:.5"/>'; }
+      for (var y=0;y<=10;y++){ g+='<line x1="'+sx(-1)+'" y1="'+sy(y)+'" x2="'+sx(5)+'" y2="'+sy(y)+'" style="stroke:var(--grid);stroke-width:.5"/>'; }
+      g+='<line x1="'+sx(-1)+'" y1="'+sy(0)+'" x2="'+sx(5)+'" y2="'+sy(0)+'" style="stroke:var(--axis);stroke-width:1"/>';
+      g+='<line x1="'+sx(0)+'" y1="'+sy(0)+'" x2="'+sx(0)+'" y2="'+sy(10)+'" style="stroke:var(--axis);stroke-width:1"/>';
+      for (var xn=-1;xn<=5;xn++){ if(xn===0) continue; g+='<text x="'+sx(xn)+'" y="'+(parseFloat(sy(0))+8).toFixed(1)+'" text-anchor="middle" style="fill:var(--muted);font:6.5px system-ui">'+xn+'</text>'; }
+      for (var yn=1;yn<=10;yn++){ g+='<text x="'+(parseFloat(sx(0))-3).toFixed(1)+'" y="'+(parseFloat(sy(yn))+2.3).toFixed(1)+'" text-anchor="end" style="fill:var(--muted);font:6.5px system-ui">'+yn+'</text>'; }
+      // Smooth curve through readable points (peak, valley, bump, valley, peak, descent). f(1)=1, f(5)=7.
+      var pts=[[-1,9],[0,8],[1,1],[2,4],[3,1.5],[4,9],[5,7]], d="M "+sx(pts[0][0])+" "+sy(pts[0][1]);
+      for (var i=0;i<pts.length-1;i++){
+        var p0=pts[Math.max(0,i-1)], p1=pts[i], p2=pts[i+1], p3=pts[Math.min(pts.length-1,i+2)];
+        var c1x=p1[0]+(p2[0]-p0[0])/6, c1y=p1[1]+(p2[1]-p0[1])/6;
+        var c2x=p2[0]-(p3[0]-p1[0])/6, c2y=p2[1]-(p3[1]-p1[1])/6;
+        d+=" C "+sx(c1x)+" "+sy(c1y)+", "+sx(c2x)+" "+sy(c2y)+", "+sx(p2[0])+" "+sy(p2[1]);
+      }
+      g+='<path d="'+d+'" style="fill:none;stroke:var(--curve);stroke-width:2"/>';
+      return '<svg viewBox="0 0 120 120" width="100%" style="display:block">'+g+'</svg>';
+    }
+    // Dedicated cubic with local max (-3,6) and local min (3,0); grid x -6..6, y -2..10.
+    function cubicMaxMin(){
+      var SX=9, SY=8.5, OX=64, OY0=97; // y=0 at 97 (y=10 -> 12, y=-2 -> 114)
+      function sx(x){ return (OX + x*SX).toFixed(1); } function sy(y){ return (OY0 - y*SY).toFixed(1); }
+      var g="";
+      for (var x=-6;x<=6;x++){ g+='<line x1="'+sx(x)+'" y1="'+sy(-2)+'" x2="'+sx(x)+'" y2="'+sy(10)+'" style="stroke:var(--grid);stroke-width:.5"/>'; }
+      for (var y=-2;y<=10;y++){ g+='<line x1="'+sx(-6)+'" y1="'+sy(y)+'" x2="'+sx(6)+'" y2="'+sy(y)+'" style="stroke:var(--grid);stroke-width:.5"/>'; }
+      g+='<line x1="'+sx(-6)+'" y1="'+sy(0)+'" x2="'+sx(6)+'" y2="'+sy(0)+'" style="stroke:var(--axis);stroke-width:1"/>';
+      g+='<line x1="'+sx(0)+'" y1="'+sy(-2)+'" x2="'+sx(0)+'" y2="'+sy(10)+'" style="stroke:var(--axis);stroke-width:1"/>';
+      for (var xn=-6;xn<=6;xn++){ if(xn===0)continue; g+='<text x="'+sx(xn)+'" y="'+(parseFloat(sy(0))+8).toFixed(1)+'" text-anchor="middle" style="fill:var(--muted);font:6px system-ui">'+xn+'</text>'; }
+      for (var yn=-2;yn<=10;yn++){ if(yn===0)continue; g+='<text x="'+(parseFloat(sx(0))-3).toFixed(1)+'" y="'+(parseFloat(sy(yn))+2.2).toFixed(1)+'" text-anchor="end" style="fill:var(--muted);font:6px system-ui">'+yn+'</text>'; }
+      var f=function(x){ return x*x*x/18 - 1.5*x + 3; }, d="", pen=true;
+      for (var t=-6;t<=6+1e-9;t+=0.1){ var v=f(t); if(v<-2.2||v>10.2){pen=true;continue;} d+=(pen?"M":"L")+sx(t)+" "+sy(v)+" "; pen=false; }
+      g+='<path d="'+d.trim()+'" style="fill:none;stroke:var(--curve);stroke-width:2"/>';
+      g+='<circle cx="'+sx(-3)+'" cy="'+sy(6)+'" r="2.6" style="fill:var(--curve)"/>';
+      g+='<circle cx="'+sx(3)+'" cy="'+sy(0)+'" r="2.6" style="fill:var(--curve)"/>';
+      return '<svg viewBox="0 0 130 122" width="100%" style="display:block">'+g+'</svg>';
+    }
+    function graphSVG(kind) {
+      if (kind==="salesWave") return waveGraph();
+      if (kind==="cubicMaxMin") return cubicMaxMin();
+      var S = 9, O = 60, W = 120;
+      function sx(x){ return (O + x*S).toFixed(1); } function sy(y){ return (O - y*S).toFixed(1); }
+      var g = "";
+      for (var i=-5;i<=5;i++){ g+='<line x1="'+sx(i)+'" y1="'+sy(-5)+'" x2="'+sx(i)+'" y2="'+sy(5)+'" style="stroke:var(--grid);stroke-width:.5"/>'; g+='<line x1="'+sx(-5)+'" y1="'+sy(i)+'" x2="'+sx(5)+'" y2="'+sy(i)+'" style="stroke:var(--grid);stroke-width:.5"/>'; }
+      g+='<line x1="'+sx(-5)+'" y1="'+sy(0)+'" x2="'+sx(5)+'" y2="'+sy(0)+'" style="stroke:var(--axis);stroke-width:1"/>';
+      g+='<line x1="'+sx(0)+'" y1="'+sy(-5)+'" x2="'+sx(0)+'" y2="'+sy(5)+'" style="stroke:var(--axis);stroke-width:1"/>';
+      for (var nn=-5;nn<=5;nn++){ if(nn===0) continue;
+        g+='<text x="'+sx(nn)+'" y="'+(parseFloat(sy(0))+8).toFixed(1)+'" text-anchor="middle" style="fill:var(--muted);font:6.5px system-ui">'+nn+'</text>';
+        g+='<text x="'+(parseFloat(sx(0))-4).toFixed(1)+'" y="'+(parseFloat(sy(nn))+2.3).toFixed(1)+'" text-anchor="end" style="fill:var(--muted);font:6.5px system-ui">'+nn+'</text>';
+      }
+      function plot(f,a,b){ a=(a==null?-5:a); b=(b==null?5:b); var d="",pen=true; for(var x=a;x<=b+1e-9;x+=0.1){ var y=f(x); if(!isFinite(y)||y<-5.2||y>5.2){pen=true;continue;} d+=(pen?"M":"L")+sx(x)+" "+sy(y)+" "; pen=false; } return '<path d="'+d.trim()+'" style="fill:none;stroke:var(--curve);stroke-width:2"/>'; }
+      function plotX(f,a,b){ a=(a==null?-5:a); b=(b==null?5:b); var d="",pen=true; for(var y=a;y<=b+1e-9;y+=0.1){ var x=f(y); if(!isFinite(x)||x<-5.2||x>5.2){pen=true;continue;} d+=(pen?"M":"L")+sx(x)+" "+sy(y)+" "; pen=false; } return '<path d="'+d.trim()+'" style="fill:none;stroke:var(--curve);stroke-width:2"/>'; }
+      if(kind==="sine")g+=plot(function(x){return 2*Math.sin(Math.PI*x/2);});
+      else if(kind==="line")g+=plot(function(x){return -2.8*x+1.7;});
+      else if(kind==="cubic")g+=plot(function(x){return 6*x*x*x+9*x*x-2;},-1.7,1.05);
+      else if(kind==="hline")g+=plot(function(){return -2;});
+      else if(kind==="ellipse")g+='<ellipse cx="'+sx(-0.7)+'" cy="'+sy(-2)+'" rx="'+(1.2*S).toFixed(1)+'" ry="'+(1*S).toFixed(1)+'" style="fill:none;stroke:var(--curve);stroke-width:2"/>';
+      else if(kind==="sideways")g+=plotX(function(y){return 0.6*y*y-2;});
+      else if(kind==="wave")g+=plot(function(x){return 1.2*Math.sin(Math.PI*x/2);});
+      else if(kind==="parabup")g+=plot(function(x){return 1.6*(x+2.5)*(x+2.5)+2.2;},-4.2,-0.8);
+      else if(kind==="cubicS")g+=plot(function(x){return 0.12*x*x*x-0.7*x;},-4.3,4.3);
+      else if(kind==="sqrtcurve")g+=plot(function(x){return Math.sqrt(x+1)+2;},-1,5);
+      else if(kind==="ellipseR")g+='<ellipse cx="'+sx(2)+'" cy="'+sy(-1)+'" rx="'+(1*S).toFixed(1)+'" ry="'+(2*S).toFixed(1)+'" style="fill:none;stroke:var(--curve);stroke-width:2"/>';
+      else if(kind==="linedown")g+=plot(function(x){return -x+2;});
+      else if(kind==="steepneg")g+=plot(function(x){return -4*(x+1)-3;},-3,-0.5);
+      else if(kind==="f8line")g+=plot(function(x){return -0.2*x+3.8;});
+      else if(kind==="sq")g+=plot(function(x){return x*x;});
+      else if(kind==="cube")g+=plot(function(x){return x*x*x;});
+      else if(kind==="sqrt0")g+=plot(Math.sqrt,0,5);
+      else if(kind==="recipsq")g+=plot(function(x){return 1/(x*x);});
+      else if(kind==="recip")g+=plot(function(x){return 1/x;});
+      else if(kind==="absv")g+=plot(function(x){return Math.abs(x);});
+      else if(kind==="cbrt")g+=plot(function(x){return Math.cbrt(x);});
+      else if(kind==="identity")g+=plot(function(x){return x;});
+      else if(kind==="cubicTurns")g+=plot(function(x){return 0.25*x*x*x-3*x;});
+      else if(kind==="parabMin")g+=plot(function(x){return x*x-4;});
+      else if(kind==="decrCurve")g+=plot(function(x){return 0.12*x*x-1.0*x-1;},-4,4);
+      else if(kind==="parabMax3")g+=plot(function(x){return 2-0.9*(x-3)*(x-3);});
+      else if(kind==="parabArc"){ g+=plot(function(x){return -0.9*x*x-0.3*x+4;},-2,3); g+='<circle cx="'+sx(-2)+'" cy="'+sy(1)+'" r="2.6" style="fill:var(--curve)"/>'; g+='<circle cx="'+sx(3)+'" cy="'+sy(-5)+'" r="2.6" style="fill:var(--curve)"/>'; }
+      return '<svg viewBox="0 0 '+W+' '+W+'" width="100%" style="display:block">'+g+'</svg>';
+    }
+
+    function evalAnswer(s){
+      s = String(s).replace(/−/g,"-").replace(/\s+/g,"");
+      if (s === "") return null;
+      if (/^-?\d+(\.\d+)?$/.test(s)) return parseFloat(s);
+      var m = s.match(/^(-?\d+(?:\.\d+)?)\/(-?\d+(?:\.\d+)?)$/);
+      if (m) { var d = parseFloat(m[2]); return d !== 0 ? parseFloat(m[1]) / d : null; }
+      return null;
+    }
+
+    function normExpr(s){
+      s = String(s).toLowerCase().replace(/\s+/g,"").replace(/\*/g,"").replace(/−/g,"-").replace(/²/g,"^2").replace(/³/g,"^3");
+      if (s==="") return "";
+      if (!/^[+-]/.test(s)) s = "+"+s;
+      var t = s.match(/[+-][^+-]+/g) || [];
+      t = t.map(function(term){
+        var m = term.match(/^([+-])(\d*\.?\d*)(.*)$/);
+        if (!m) return term;
+        var f = (m[3].match(/[a-z](\^\d+)?/g) || []); f.sort();
+        return m[1] + m[2] + f.join("");
+      });
+      t.sort();
+      return t.join("");
+    }
+    function exprMatch(input, blank){
+      var n = normExpr(input); if (n==="") return false;
+      if (n === normExpr(blank.answer)) return true;
+      if (blank.accept) for (var i=0;i<blank.accept.length;i++){ if (n===normExpr(blank.accept[i])) return true; }
+      return false;
+    }
+    // Convert a math-y answer/input string into evaluable JS (implicit mult, ^, −, roots, π, |abs|).
+    function toJsExpr(s){
+      s = String(s).toLowerCase().replace(/\s+/g,"").replace(/−/g,"-").replace(/²/g,"^2").replace(/³/g,"^3").replace(/\^/g,"**");
+      s = s.replace(/\|([^|]*)\|/g,"¢($1)");        // |expr| -> abs(expr)
+      s = s.replace(/([0-9a-z)\]])([√∛π¢(])/g,"$1*$2"); // implicit mult before a root / π / abs / paren
+      s = s.replace(/√\s*\(/g,"§(");                // protect sqrt(  from implicit-mult / letter rules
+      s = s.replace(/∛\s*\(/g,"¤(");                // protect cbrt(
+      s = s.replace(/π/g,"°");                      // protect pi
+      s = s.replace(/(\d)([a-z(])/g,"$1*$2");   // 6b -> 6*b , 11( -> 11*(
+      s = s.replace(/([a-z)])(\()/g,"$1*$2");   // b( -> b*( , )( -> )*(
+      s = s.replace(/(\))([a-z0-9])/g,"$1*$2"); // )b -> )*b , )2 -> )*2
+      s = s.replace(/([a-z])([a-z])/g,"$1*$2"); // xh -> x*h
+      s = s.replace(/§/g,"Math.sqrt").replace(/¤/g,"Math.cbrt").replace(/¢/g,"Math.abs").replace(/°/g,"(Math.PI)");
+      return s;
+    }
+    // Numeric equivalence: do input & answer agree as functions of their variable?
+    function exprEquiv(input, ans){
+      var v=(String(ans).toLowerCase().match(/[a-z]/)||["x"])[0];
+      var fi, fa;
+      try { fi=new Function(v,"return ("+toJsExpr(input)+");"); fa=new Function(v,"return ("+toJsExpr(ans)+");"); } catch(e){ return false; }
+      var samples=[0.37,1.13,2.71,3.59,-1.27,4.42,5.83], tot=0, ok=0;
+      for (var i=0;i<samples.length;i++){
+        var x=samples[i], yi, ya;
+        try { yi=fi(x); ya=fa(x); } catch(e){ continue; }
+        if (typeof yi!=="number"||typeof ya!=="number"||!isFinite(yi)||!isFinite(ya)) continue;
+        tot++; if (Math.abs(yi-ya) < 1e-6*(1+Math.abs(ya))) ok++;
+      }
+      return tot>=3 && ok===tot;
+    }
+    // Plain word/term answers (e.g. "mitochondria", "natural selection") — used for
+    // non-math generated sets. Letters/spaces/'/- only (no digits or math operators).
+    function isWordAnswer(s){ return typeof s === "string" && /^[a-zA-Z][a-zA-Z\s'\-]*$/.test(s); }
+    function wordNorm(s){ return String(s).toLowerCase().replace(/[’]/g, "'").replace(/\s+/g, " ").replace(/[.\s]+$/, "").trim(); }
+    function wordMatch(input, ans){ var n = wordNorm(input); return n !== "" && n === wordNorm(ans); }
+    function normText(s){
+      return String(s).toLowerCase().replace(/\s+/g,"").replace(/−/g,"-")
+        .replace(/infinity|infty|\binf\b/g,"∞").replace(/union/g,"∪").replace(/\bu\b/g,"∪");
+    }
+    function textMatch(input, blank){
+      var n = normText(input); if (n==="") return false;
+      if (n === normText(blank.answer)) return true;
+      if (blank.accept) for (var i=0;i<blank.accept.length;i++){ if (n===normText(blank.accept[i])) return true; }
+      return false;
+    }
+    // ── Standardized math keyboard — one tabbed pad (mirrors the school's), shown on every typed answer ──
+    var MP_TABS = ["Basic","Funcs","Trig","Interval","Relate","ABC"];
+    var MP_TABLABEL = { Basic:"Basic", Funcs:"Funcs", Trig:"Trig", Interval:"Interval", Relate:"=", ABC:"ABC" };
+    var MP_COLS = { Basic:7, Funcs:4, Trig:6, Interval:4, Relate:6 };
+    // Each key: b/a = text insert (plain inputs), j = LaTeX insert (math-field). #@ = selection, #? = empty editable box.
+    var MP_KEYS = {
+      // 7-col calculator layout (matches the school Basic tab); {arrows} = a ←→ pair in one cell.
+      Basic: [
+        {l:"( )",b:"(",a:")",j:"(#@)"},{l:"x<sup>□</sup>",b:"^",j:"^{#?}"},{l:"7",b:"7"},{l:"8",b:"8"},{l:"9",b:"9"},{l:"□/□",b:"/",j:"\\frac{#@}{#?}"},{l:"↑",k:"up"},
+        {l:"π",b:"π",j:"\\pi"},{l:"√",b:"√(",a:")",j:"\\sqrt{#@}"},{l:"4",b:"4"},{l:"5",b:"5"},{l:"6",b:"6"},{l:"×",b:"*",j:"\\cdot"},{arrows:true},
+        {l:"x<sub>□</sub>",b:"_",j:"_{#?}"},{l:"<sup>3</sup>√",b:"∛(",a:")",j:"\\sqrt[3]{#@}"},{l:"1",b:"1"},{l:"2",b:"2"},{l:"3",b:"3"},{l:"−",b:"-",j:"-"},{l:"↓",k:"down"},
+        {l:"DNE",b:"DNE",j:"\\mathrm{DNE}"},{l:"|□|",b:"|",a:"|",j:"\\left|#@\\right|"},{l:"0",b:"0"},{l:".",b:"."},{l:",",b:","},{l:"+",b:"+"},{l:"⌫",k:"bs"}
+      ],
+      Funcs: [
+        {l:"log",b:"log(",a:")",j:"\\log(#@)"},{l:"ln",b:"ln(",a:")",j:"\\ln(#@)"},{l:"log<sub>□</sub>",b:"log_(",a:")",j:"\\log_{#?}(#@)"},{l:"e<sup>□</sup>",b:"e^",j:"e^{#?}"}
+      ],
+      Trig: [
+        {l:"sin",b:"sin(",a:")",j:"\\sin(#@)"},{l:"cos",b:"cos(",a:")",j:"\\cos(#@)"},{l:"tan",b:"tan(",a:")",j:"\\tan(#@)"},
+        {l:"sec",b:"sec(",a:")",j:"\\sec(#@)"},{l:"csc",b:"csc(",a:")",j:"\\csc(#@)"},{l:"cot",b:"cot(",a:")",j:"\\cot(#@)"},
+        {l:"sin<sup>-1</sup>",b:"arcsin(",a:")",j:"\\arcsin(#@)"},{l:"cos<sup>-1</sup>",b:"arccos(",a:")",j:"\\arccos(#@)"},{l:"tan<sup>-1</sup>",b:"arctan(",a:")",j:"\\arctan(#@)"},
+        {l:"sinh",b:"sinh(",a:")",j:"\\sinh(#@)"},{l:"cosh",b:"cosh(",a:")",j:"\\cosh(#@)"},{l:"tanh",b:"tanh(",a:")",j:"\\tanh(#@)"},{l:"π",b:"π",j:"\\pi"}
+      ],
+      Interval: [
+        {l:"( )",b:"(",a:")",j:"(#@)"},{l:"[ ]",b:"[",a:"]",j:"[#@]"},{l:"( ]",b:"(",a:"]",j:"(#@]"},{l:"[ )",b:"[",a:")",j:"[#@)"},
+        {l:"∞",b:"∞",j:"\\infty"},{l:"−∞",b:"-∞",j:"-\\infty"},{l:"∪",b:"∪",j:"\\cup"},{l:",",b:","}
+      ],
+      Relate: [
+        {l:"[",b:"["},{l:"]",b:"]"},{l:"{",b:"{",j:"\\{"},{l:"}",b:"}",j:"\\}"},{l:"(",b:"("},{l:")",b:")"},
+        {l:"⟨ ⟩",b:"⟨",a:"⟩",j:"\\langle#@\\rangle"},{l:"|□|",b:"|",a:"|",j:"\\left|#@\\right|"},{l:"=",b:"="},{l:"&lt;",b:"<",j:"<"},{l:"&gt;",b:">",j:">"},{l:"≤",b:"≤",j:"\\le"},
+        {l:"≥",b:"≥",j:"\\ge"},{l:"≠",b:"≠",j:"\\ne"},{l:"%",b:"%",j:"\\%"},{l:",",b:","},{l:"∞",b:"∞",j:"\\infty"},{l:"!",b:"!"}
+      ]
+    };
+    function mpKeyHTML(k){
+      if (k.arrows) return '<div class="mp-arrows"><button type="button" class="mp-key mp-fn" data-k="left">←</button><button type="button" class="mp-key mp-fn" data-k="right">→</button></div>';
+      if (k.k) return '<button type="button" class="mp-key mp-fn" data-k="'+k.k+'">'+k.l+'</button>';
+      return '<button type="button" class="mp-key" data-b="'+k.b+'"'+(k.a?' data-a="'+k.a+'"':'')+(k.j!=null?' data-j="'+k.j.replace(/"/g,"&quot;")+'"':'')+'>'+k.l+'</button>';
+    }
+    function abcKeysHTML(){
+      var rows=["qwertyuiop","asdfghjkl","zxcvbnm"], h="";
+      rows.forEach(function(r){ h+='<div class="mp-row">'+r.split("").map(function(c){return '<button type="button" class="mp-key mp-abc" data-b="'+c+'">'+c+'</button>';}).join("")+'</div>'; });
+      h+='<div class="mp-row"><button type="button" class="mp-key" data-b=",">,</button><button type="button" class="mp-key mp-space" data-b=" ">space</button><button type="button" class="mp-key" data-b=".">.</button><button type="button" class="mp-key" data-b="-">-</button><button type="button" class="mp-key mp-fn" data-k="bs">⌫</button></div>';
+      return h;
+    }
+    function buildMathPad(defaultTab){
+      defaultTab = MP_TABS.indexOf(defaultTab)>-1 ? defaultTab : "Basic";
+      var tabs = MP_TABS.map(function(t){ return '<button type="button" class="mp-tab'+(t===defaultTab?' on':'')+'" data-tab="'+t+'">'+MP_TABLABEL[t]+'</button>'; }).join("");
+      var grids = MP_TABS.map(function(t){
+        if (t==="ABC") return '<div class="mp-grid mp-grid-abc'+(t===defaultTab?' on':'')+'" data-grid="ABC">'+abcKeysHTML()+'</div>';
+        return '<div class="mp-grid'+(t===defaultTab?' on':'')+'" data-grid="'+t+'" style="--cols:'+(MP_COLS[t]||6)+'">'+MP_KEYS[t].map(mpKeyHTML).join("")+'</div>';
+      }).join("");
+      return '<div class="mathpad mp-closed" aria-label="Math keyboard"><div class="mp-tabs">'+tabs+'<button type="button" class="mp-x" data-mpx="1" aria-label="Close keyboard">✕</button></div>'+grids+'</div>';
+    }
+    // Answer-shape detector: interval-style (no letters) → open the Interval tab by default.
+    function isIntervalStr(a){ return typeof a==="string" && /[∞∪\[\]()]/.test(a) && !/[a-z]/i.test(a); }
+    function insertAtCursor(input, before, after){
+      after = after || ""; var s=input.selectionStart, e=input.selectionEnd, v=input.value;
+      input.value = v.slice(0,s) + before + after + v.slice(e);
+      var pos = s + before.length; input.setSelectionRange(pos,pos); input.focus();
+    }
+    // Keyboard special keys: backspace, cursor moves, and ↑/↓ jump between answer fields.
+    function mpSpecial(inp, k){
+      var s=inp.selectionStart, en=inp.selectionEnd, v=inp.value;
+      if(k==="bs"){ if(s!==en){ inp.value=v.slice(0,s)+v.slice(en); inp.setSelectionRange(s,s); } else if(s>0){ inp.value=v.slice(0,s-1)+v.slice(s); inp.setSelectionRange(s-1,s-1); } inp.focus(); }
+      else if(k==="left"){ var p=Math.max(0,s-1); inp.setSelectionRange(p,p); inp.focus(); }
+      else if(k==="right"){ var p2=Math.min(v.length,en+1); inp.setSelectionRange(p2,p2); inp.focus(); }
+      else if(k==="up"||k==="down"){ fieldNav(inp, k); }
+    }
+    function fieldNav(inp, k){ var ins=[].slice.call(optsEl.querySelectorAll(".ansin")); var i=ins.indexOf(inp); var ni=k==="up"?i-1:i+1; if(ins[ni]){ ins[ni].focus(); lastFocusedAnsin=ins[ni]; } else inp.focus(); }
+
+    // ── MathLive bridge: <math-field> answer boxes (2D fractions/exponents) ──
+    function isMF(el){ return el && el.tagName && el.tagName.toLowerCase()==="math-field"; }
+    // MathLive ascii-math → our grader's text conventions.
+    function asciiToText(a){
+      a = String(a==null?"":a);
+      a = a.replace(/root\(\s*3\s*\)\s*\(([^()]*)\)/g, "∛($1)");          // cube root
+      a = a.replace(/root\(\s*([^()]+?)\s*\)\s*\(([^()]*)\)/g, "($2)^(1/($1))"); // other nth roots
+      a = a.replace(/sqrt\s*\(/g, "√(");
+      a = a.replace(/oo/g, "∞").replace(/<=/g, "≤").replace(/>=/g, "≥").replace(/!=/g, "≠").replace(/\bpi\b/g, "π");
+      return a;
+    }
+    // Our answer text → ascii-math so MathLive can render the answer key nicely.
+    function textToAscii(t){
+      return String(t==null?"":t).replace(/²/g,"^2").replace(/³/g,"^3").replace(/√/g,"sqrt").replace(/∛/g,"root(3)")
+        .replace(/∞/g,"oo").replace(/π/g,"pi").replace(/≤/g,"<=").replace(/≥/g,">=").replace(/×/g,"*").replace(/·/g,"*").replace(/−/g,"-");
+    }
+    function aval(el){ return isMF(el) ? asciiToText(el.getValue ? el.getValue("ascii-math") : el.value) : el.value; }
+    function numText(el){ return String(aval(el)).replace(/[()]/g,""); }  // numeric read (a built fraction → 1/2)
+    function setval(el, t){ if(isMF(el)){ try{ el.setValue(textToAscii(t), {format:"ascii-math"}); }catch(_){ el.value=textToAscii(t); } } else { el.value = t; } }
+    // An answer box: a math-field for math answers, a plain input for word answers.
+    function ansInputHTML(answer, attrs, extraCls){
+      attrs = attrs || ""; var xc = extraCls ? (" "+extraCls) : "";
+      if (isWordAnswer(answer)) return '<input type="text" class="ansin'+xc+'" inputmode="none" autocomplete="off" '+attrs+'>';
+      return '<math-field class="ansin mathfield'+xc+'" math-virtual-keyboard-policy="manual" '+attrs+'></math-field>';
+    }
+    // Insert a key into a math-field (LaTeX via data-j) or run a command for special keys.
+    function mfKey(mf, btn){
+      var sk=btn.getAttribute("data-k");
+      if (sk){
+        if(sk==="bs") mf.executeCommand("deleteBackward");
+        else if(sk==="left") mf.executeCommand("moveToPreviousChar");
+        else if(sk==="right") mf.executeCommand("moveToNextChar");
+        else if(sk==="up") mf.executeCommand("moveUp");      // into numerator / exponent
+        else if(sk==="down") mf.executeCommand("moveDown");  // into denominator / base
+        mf.focus(); return;
+      }
+      var j=btn.getAttribute("data-j");
+      mf.insert(j!=null ? j : (btn.getAttribute("data-b")||""), { focus:true });
+      mf.focus();
+    }
+
+    function tableHTML(item){
+      if (item.x && (item.y || item.f)) {
+        var second = item.f || item.y, lab = item.f ? "f(x)" : "y";
+        var hx='<tr><th>x</th>', hy='<tr><th>'+lab+'</th>';
+        item.x.forEach(function(v){ hx+='<td>'+v+'</td>'; });
+        second.forEach(function(v){ hy+='<td>'+v+'</td>'; });
+        return '<table class="dt">'+hx+'</tr>'+hy+'</tr></table>';
+      }
+      var hd = item.head || ["x","y"], cls = item.head ? "dt plain" : "dt";
+      var h='<table class="'+cls+'"><tr><th>'+hd[0]+'</th><th>'+hd[1]+'</th></tr>';
+      (item.rows||[]).forEach(function(r){ h+='<tr><td>'+r[0]+'</td><td>'+r[1]+'</td></tr>'; });
+      return h+'</table>';
+    }
+
+    var T14 = '<div class="tscroll"><table class="dt plain"><tr><th><em>x</em></th><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td></tr><tr><th><em>f</em>(<em>x</em>)</th><td>3</td><td>1</td><td>2</td><td>5</td><td>4</td></tr><tr><th><em>g</em>(<em>x</em>)</th><td>2</td><td>4</td><td>5</td><td>1</td><td>3</td></tr></table></div>';
+    var T13B = '<div class="tscroll"><table class="dt plain"><tr><th>year</th><td>2017</td><td>2018</td><td>2019</td><td>2020</td><td>2021</td><td>2022</td><td>2023</td><td>2024</td><td>2025</td></tr><tr><th>sales</th><td>254</td><td>281</td><td>302</td><td>317</td><td>326</td><td>329</td><td>326</td><td>317</td><td>302</td></tr></table></div>';
+    var T17 = '<div class="tscroll"><table class="dt plain"><tr><th><em>x</em></th><td>1</td><td>2</td><td>3</td><td>4</td></tr><tr><th><em>f</em>(<em>x</em>)</th><td>3</td><td>5</td><td>7</td><td>9</td></tr></table></div>';
+    var DECKS = [
+    { id:"1.1", title:"1.1 · Functions and Function Notation", graded:{}, questions: [
+      {
+        type: "mc",
+        prompt: "The amount of garbage, <em>G</em>, produced by a city with population <em>p</em> is given by <em>G</em> = <em>f</em>(<em>p</em>). <em>G</em> is measured in tons per week, and <em>p</em> is measured in thousands of people.<br><br>The town of Tola has a population of 25,000 and produces 10 tons of garbage each week. Express this information in terms of the function <em>f</em>.",
+        options: ["<em>f</em>(10) = 25", "<em>f</em>(25) = 10", "<em>f</em> = 10/25"],
+        correct: 1, points: 10
+      },
+      {
+        type: "select", media: "graph",
+        prompt: "Select all of the following graphs which represent <em>y</em> as a function of <em>x</em>.",
+        items: ["sine", "line", "cubic", "hline", "ellipse", "sideways"],
+        answer: [true, true, true, true, false, false], points: 10
+      },
+      {
+        type: "select", media: "table", layout: "horizontal",
+        prompt: "Select all of the following tables which represent <em>y</em> as a function of <em>x</em>.",
+        items: [
+          { rows: [[-4,-3],[1,2],[6,2],[9,8],[1,10]] },
+          { rows: [[-4,-2],[2,3],[4,3],[9,8],[14,16]] },
+          { rows: [[-2,-5],[2,1],[6,4],[9,8],[16,10]] },
+          { rows: [[-2,-5],[3,1],[3,6],[8,7],[15,12]] }
+        ],
+        answer: [false, true, true, false], points: 10
+      },
+      {
+        type: "select", media: "table", layout: "vertical",
+        prompt: "Select all of the following tables which represent <em>y</em> as a function of <em>x</em> <strong>and</strong> are one-to-one.",
+        items: [
+          { x: [1, 8, 11], y: [5, 7, 12] },
+          { x: [1, 8, 11], y: [5, 7, 7] },
+          { x: [1, 8, 8], y: [5, 7, 12] }
+        ],
+        answer: [true, false, false], points: 10
+      },
+      {
+        type: "select", media: "graph", layout: "vertical",
+        prompt: "Select all of the following graphs which are <strong>one-to-one functions</strong>.",
+        items: ["wave", "parabup", "cubicS", "sqrtcurve", "ellipseR", "linedown"],
+        answer: [false, false, false, true, false, true], points: 10
+      },
+      {
+        type: "input",
+        prompt: "The plot below represents the function <em>f</em>(<em>x</em>):",
+        graph: "steepneg",
+        ask: "Evaluate <em>f</em>(−1):",
+        label: "<em>f</em>(−1) =",
+        answer: -3, answerText: "-3", points: 10
+      },
+      {
+        type: "tableinput",
+        prompt: "Based on the table below,",
+        table: { x: [0,1,2,3,4,5,6,7,8,9], f: [81,82,11,66,6,16,42,50,2,17] },
+        blanks: [
+          { ask: "Evaluate <em>f</em>(2):", label: "<em>f</em>(2) =", answer: 11 },
+          { ask: "Solve <em>f</em>(<em>x</em>) = 6:", label: "<em>x</em> =", answer: 4 }
+        ],
+        points: 10
+      },
+      {
+        type: "graphinput",
+        prompt: "The plot below represents the function <em>f</em>(<em>x</em>):",
+        graph: "f8line",
+        blanks: [
+          { ask: "Evaluate <em>f</em>(4):", label: "<em>f</em>(4) =", answer: 3 },
+          { ask: "Solve <em>f</em>(<em>x</em>) = 4:", label: "<em>x</em> =", answer: -1, answerText: "-1" }
+        ],
+        points: 10
+      },
+      {
+        type: "multiinput",
+        prompt: "Given the function <em>f</em>(<em>x</em>) = 3<em>x</em>² − 7<em>x</em> + 3. Calculate the following values:",
+        blanks: [
+          { label: "<em>f</em>(−2) =", answer: 29 },
+          { label: "<em>f</em>(−1) =", answer: 13 },
+          { label: "<em>f</em>(0) =", answer: 3 },
+          { label: "<em>f</em>(1) =", answer: -1, answerText: "-1" },
+          { label: "<em>f</em>(2) =", answer: 1 }
+        ],
+        points: 10
+      },
+      {
+        type: "multiinput",
+        prompt: "Suppose <em>f</em>(<em>x</em>) = −<em>x</em>² − <em>x</em> + 8. Compute the following:",
+        blanks: [
+          { label: "A.) <em>f</em>(−4) + <em>f</em>(4) =", answer: -16, answerText: "-16" },
+          { label: "B.) <em>f</em>(−4) − <em>f</em>(4) =", answer: 8 }
+        ],
+        points: 10
+      },
+      {
+        type: "match",
+        prompt: "Match each function name with its equation.",
+        options: ["Reciprocal", "Linear", "Quadratic", "Square Root", "Cube root", "Cubic", "Reciprocal Squared", "Absolute Value"],
+        items: [
+          { eq: "<em>y</em> = ∛<em>x</em>", answer: 4 },
+          { eq: "<em>y</em> = <em>x</em>", answer: 1 },
+          { eq: "<em>y</em> = <em>x</em>³", answer: 5 },
+          { eq: "<em>y</em> = <em>x</em>²", answer: 2 },
+          { eq: "<em>y</em> = 1/<em>x</em>", answer: 0 },
+          { eq: "<em>y</em> = 1/<em>x</em>²", answer: 6 },
+          { eq: "<em>y</em> = √<em>x</em>", answer: 3 },
+          { eq: "<em>y</em> = |<em>x</em>|", answer: 7 }
+        ],
+        points: 10
+      },
+      {
+        type: "match", media: "graph",
+        prompt: "Match each graph with its equation.",
+        options: ["sq", "cube", "sqrt0", "recipsq", "recip", "absv", "cbrt", "identity"],
+        items: [
+          { eq: "<em>y</em> = <em>x</em>³", answer: 1 },
+          { eq: "<em>y</em> = <em>x</em>²", answer: 0 },
+          { eq: "<em>y</em> = ∛<em>x</em>", answer: 6 },
+          { eq: "<em>y</em> = 1/<em>x</em>²", answer: 3 },
+          { eq: "<em>y</em> = <em>x</em>", answer: 7 },
+          { eq: "<em>y</em> = |<em>x</em>|", answer: 5 },
+          { eq: "<em>y</em> = √<em>x</em>", answer: 2 },
+          { eq: "<em>y</em> = 1/<em>x</em>", answer: 4 }
+        ],
+        points: 10
+      },
+      {
+        type: "match", media: "table",
+        prompt: "Match each table with its equation.",
+        options: [
+          { head:["Input","Output"], rows:[["-2","_"],["-1","_"],["0","0"],["1","1"],["4","2"],["9","3"]] },
+          { head:["Input","Output"], rows:[["-2","-8"],["-1","-1"],["0","0"],["1","1"],["2","8"],["3","27"]] },
+          { head:["Input","Output"], rows:[["-2","2"],["-1","1"],["0","0"],["1","1"],["2","2"],["3","3"]] },
+          { head:["Input","Output"], rows:[["-2","4"],["-1","1"],["0","0"],["1","1"],["2","4"],["3","9"]] },
+          { head:["Input","Output"], rows:[["-2","-0.5"],["-1","-1"],["0","_"],["1","1"],["2","0.5"],["3","0.33"]] },
+          { head:["Input","Output"], rows:[["-2","-2"],["-1","-1"],["0","0"],["1","1"],["2","2"],["3","3"]] }
+        ],
+        items: [
+          { eq: "<em>y</em> = |<em>x</em>|", answer: 2 },
+          { eq: "<em>y</em> = 1/<em>x</em>", answer: 4 },
+          { eq: "<em>y</em> = √<em>x</em>", answer: 0 },
+          { eq: "<em>y</em> = <em>x</em>", answer: 5 },
+          { eq: "<em>y</em> = <em>x</em>²", answer: 3 },
+          { eq: "<em>y</em> = <em>x</em>³", answer: 1 }
+        ],
+        points: 10
+      },
+      {
+        type: "labelmatch", media: "table",
+        prompt: "Match each table with its equation.",
+        choices: ["Linear", "Reciprocal", "Square Root", "Quadratic", "Absolute Value", "Cubic"],
+        items: [
+          { data: { head:["Input","Output"], rows:[["-2","2"],["-1","1"],["0","0"],["1","1"],["2","2"],["3","3"]] }, answer: 4 },
+          { data: { head:["Input","Output"], rows:[["-2","4"],["-1","1"],["0","0"],["1","1"],["2","4"],["3","9"]] }, answer: 3 },
+          { data: { head:["Input","Output"], rows:[["-2","-8"],["-1","-1"],["0","0"],["1","1"],["2","8"],["3","27"]] }, answer: 5 },
+          { data: { head:["Input","Output"], rows:[["-2","_"],["-1","_"],["0","0"],["1","1"],["4","2"],["9","3"]] }, answer: 2 },
+          { data: { head:["Input","Output"], rows:[["-2","-0.5"],["-1","-1"],["0","_"],["1","1"],["2","0.5"],["3","0.33"]] }, answer: 1 },
+          { data: { head:["Input","Output"], rows:[["-2","-2"],["-1","-1"],["0","0"],["1","1"],["2","2"],["3","3"]] }, answer: 0 }
+        ],
+        points: 10
+      },
+      {
+        type: "match", media: "graph", itemMedia: "table",
+        prompt: "Match each graph with its table.",
+        options: ["identity", "cube", "sqrt0", "sq", "absv", "recip"],
+        items: [
+          { data: { head:["Input","Output"], rows:[["-2","-2"],["-1","-1"],["0","0"],["1","1"],["2","2"],["3","3"]] }, answer: 0 },
+          { data: { head:["Input","Output"], rows:[["-2","_"],["-1","_"],["0","0"],["1","1"],["4","2"],["9","3"]] }, answer: 2 },
+          { data: { head:["Input","Output"], rows:[["-2","4"],["-1","1"],["0","0"],["1","1"],["2","4"],["3","9"]] }, answer: 3 },
+          { data: { head:["Input","Output"], rows:[["-2","-8"],["-1","-1"],["0","0"],["1","1"],["2","8"],["3","27"]] }, answer: 1 },
+          { data: { head:["Input","Output"], rows:[["-2","2"],["-1","1"],["0","0"],["1","1"],["2","2"],["3","3"]] }, answer: 4 },
+          { data: { head:["Input","Output"], rows:[["-2","-0.5"],["-1","-1"],["0","_"],["1","1"],["2","0.5"],["3","0.33"]] }, answer: 5 }
+        ],
+        points: 10
+      },
+      {
+        type: "multiinput",
+        prompt: "Given the function <em>f</em>(<em>x</em>) = 7<em>x</em> + 6, evaluate and simplify the expressions below.<br><span style=\"font-size:13px;color:var(--muted)\">Simplify fully — expand and collect like terms (e.g. 3x + x → 4x).</span>",
+        blanks: [
+          { label: "<em>f</em>(<em>a</em>) =", answer: "7a + 6", accept: ["6 + 7a"] },
+          { label: "<em>f</em>(<em>a</em> + <em>h</em>) =", answer: "7a + 7h + 6" },
+          { label: "[<em>f</em>(<em>a</em>+<em>h</em>) − <em>f</em>(<em>a</em>)] / <em>h</em> =", answer: 7 }
+        ],
+        points: 10
+      },
+      {
+        type: "multiinput",
+        prompt: "For the function <em>f</em>(<em>x</em>) = 3<em>x</em>² + 2<em>x</em>, evaluate and simplify.",
+        blanks: [
+          { label: "[<em>f</em>(<em>x</em>+<em>h</em>) − <em>f</em>(<em>x</em>)] / <em>h</em> =", answer: "6x + 3h + 2" }
+        ],
+        points: 10
+      },
+      {
+        type: "multiinput",
+        prompt: "For the function <em>f</em>(<em>x</em>) = −5<em>x</em>² + <em>x</em> + 5, evaluate and fully simplify each of the following.",
+        blanks: [
+          { label: "<em>f</em>(<em>x</em> + <em>h</em>) =", answer: "-5x² - 10xh - 5h² + x + h + 5" },
+          { label: "[<em>f</em>(<em>x</em>+<em>h</em>) − <em>f</em>(<em>x</em>)] / <em>h</em> =", answer: "-10x - 5h + 1" }
+        ],
+        points: 10
+      },
+      {
+        type: "multiinput",
+        prompt: "For the function <em>f</em>(<em>x</em>) = −2<em>x</em> + 8, evaluate and simplify the difference quotient.",
+        blanks: [
+          { label: "", answer: -2, answerText: "-2" }
+        ],
+        points: 10
+      },
+      {
+        type: "multiinput",
+        prompt: "Given the function <em>f</em>(<em>x</em>) = 7 + 7<em>x</em>², calculate the following values:",
+        blanks: [
+          { label: "<em>f</em>(<em>a</em>) =", answer: "7 + 7a²" },
+          { label: "<em>f</em>(<em>a</em> + <em>h</em>) =", answer: "7a² + 14ah + 7h² + 7" },
+          { label: "[<em>f</em>(<em>a</em>+<em>h</em>) − <em>f</em>(<em>a</em>)] / <em>h</em> =", answer: "14a + 7h" }
+        ],
+        points: 10
+      }
+    ] },
+    { id:"1.2", title:"1.2 · Domain and Range", graded:{}, questions: [
+      { type:"multiinput", prompt:"Find the domain of <em>f</em>(<em>x</em>) = <em>x</em>² − 1. Write your answer in interval notation.", blanks:[{label:"Domain =", answer:"(-∞, ∞)"}], points:10 },
+      { type:"multiinput", prompt:"Find the domain of <em>f</em>(<em>x</em>) = (<em>x</em> + 1)/(2 − <em>x</em>). Interval notation.", blanks:[{label:"Domain =", answer:"(-∞, 2) ∪ (2, ∞)"}], points:10 },
+      { type:"multiinput", prompt:"Find the domain of <em>f</em>(<em>x</em>) = √(7 − <em>x</em>). Interval notation.", blanks:[{label:"Domain =", answer:"(-∞, 7]"}], points:10 },
+      { type:"multiinput", prompt:"Find the domain of <em>f</em>(<em>x</em>) = 3/(<em>x</em> − 2). Interval notation.", blanks:[{label:"Domain =", answer:"(-∞, 2) ∪ (2, ∞)"}], points:10 },
+      { type:"multiinput", prompt:"Find the domain of <em>f</em>(<em>x</em>) = √(4 − 3<em>x</em>). Interval notation.", blanks:[{label:"Domain =", answer:"(-∞, 4/3]"}], points:10 },
+      { type:"multiinput", prompt:"Find the domain of <em>f</em>(<em>x</em>) = 1/(<em>x</em>² − <em>x</em> − 6). Interval notation.", blanks:[{label:"Domain =", answer:"(-∞, -2) ∪ (-2, 3) ∪ (3, ∞)"}], points:10 },
+      { type:"multiinput", prompt:"Find the domain of <em>f</em>(<em>x</em>) = (2<em>x</em> + 1)/√(5 − <em>x</em>). Interval notation.", blanks:[{label:"Domain =", answer:"(-∞, 5)"}], points:10 },
+      { type:"multiinput", prompt:"Find the domain of <em>f</em>(<em>x</em>) = √<em>x</em> / <em>x</em>. Interval notation.", blanks:[{label:"Domain =", answer:"(0, ∞)"}], points:10 },
+      { type:"mc", prompt:"Write the set {<em>x</em> | 1 ≤ <em>x</em> ≤ 3 or <em>x</em> > 5} in interval notation.", options:["[1, 3] ∪ (5, ∞)","(1, 3) ∪ [5, ∞)","[1, 3] ∪ [5, ∞)","(1, 3] ∪ (5, ∞)"], correct:0, points:10 },
+      { type:"mc", prompt:"What is the domain of <em>f</em>(<em>x</em>) = √<em>x</em> ?", options:["[0, ∞)","(0, ∞)","(-∞, ∞)","(-∞, 0]"], correct:0, points:10 },
+      { type:"multiinput", prompt:"For <em>f</em>(<em>x</em>) = { <em>x</em> + 1 if <em>x</em> < −2;  −2<em>x</em> − 3 if <em>x</em> ≥ −2 }, find each value.", blanks:[{label:"<em>f</em>(−3) =",answer:-2},{label:"<em>f</em>(−2) =",answer:1},{label:"<em>f</em>(−1) =",answer:-1},{label:"<em>f</em>(0) =",answer:-3}], points:10 },
+      { type:"multiinput", prompt:"For <em>f</em>(<em>x</em>) = { 7<em>x</em> + 3 if <em>x</em> < 0;  7<em>x</em> + 6 if <em>x</em> ≥ 0 }, find each value.", blanks:[{label:"<em>f</em>(−1) =",answer:-4},{label:"<em>f</em>(0) =",answer:6},{label:"<em>f</em>(2) =",answer:20},{label:"<em>f</em>(4) =",answer:34}], points:10 },
+      { type:"multiinput", prompt:"For <em>f</em>(<em>x</em>) = { 5<em>x</em> if <em>x</em> < 0;  3 if 0 ≤ <em>x</em> ≤ 3;  <em>x</em>² if <em>x</em> > 3 }, find each value.", blanks:[{label:"<em>f</em>(−1) =",answer:-5},{label:"<em>f</em>(0) =",answer:3},{label:"<em>f</em>(2) =",answer:3},{label:"<em>f</em>(4) =",answer:16}], points:10 },
+      { type:"multiinput", prompt:"Find the domain and range of <em>f</em>(<em>x</em>) = 2/(<em>x</em> + 1). Interval notation.", blanks:[{label:"Domain =",answer:"(-∞, -1) ∪ (-1, ∞)"},{label:"Range =",answer:"(-∞, 0) ∪ (0, ∞)"}], points:10 },
+      { type:"multiinput", prompt:"Find the domain and range of <em>f</em>(<em>x</em>) = 2√(<em>x</em> + 4). Interval notation.", blanks:[{label:"Domain =",answer:"[-4, ∞)"},{label:"Range =",answer:"[0, ∞)"}], points:10 },
+      { type:"multiinput", prompt:"Find the domain and range of <em>f</em>(<em>x</em>) = −√(2 − <em>x</em>). Interval notation.", blanks:[{label:"Domain =",answer:"(-∞, 2]"},{label:"Range =",answer:"(-∞, 0]"}], points:10 },
+      { type:"multiinput", prompt:"Find the domain of <em>f</em>(<em>x</em>) = (<em>x</em> − 3)/(<em>x</em>² + 9<em>x</em> − 22). Interval notation.", blanks:[{label:"Domain =", answer:"(-∞, -11) ∪ (-11, 2) ∪ (2, ∞)"}], points:10 },
+      { type:"multiinput", prompt:"Find the domain of <em>f</em>(<em>x</em>) = √(<em>x</em> − 6)/(<em>x</em> − 4). Interval notation.", blanks:[{label:"Domain =", answer:"[6, ∞)"}], points:10 },
+      { type:"mc", prompt:"What is the domain of <em>f</em>(<em>x</em>) = ∛<em>x</em>  (cube root)?", options:["(-∞, ∞)","[0, ∞)","(0, ∞)","(-∞, 0]"], correct:0, points:10 },
+      { type:"multiinput", prompt:"A company's cost to produce <em>x</em> items is <em>C</em>(<em>x</em>) = 10<em>x</em> + 500 dollars.", blanks:[{label:"Fixed cost <em>C</em>(0) = $",answer:500},{label:"Cost of 25 items <em>C</em>(25) = $",answer:750}], points:10 }
+    ] },
+    { id:"1.3", title:"1.3 · Rates of Change & Behavior of Graphs", graded:{}, questions: [
+      { type:"multiinput", prompt:"Find the average rate of change of <em>f</em>(<em>x</em>) = <em>x</em>² − 1 on the interval [2, 4].", blanks:[{label:"ARC =", answer:6}], points:10 },
+      { type:"multiinput", prompt:"Find the average rate of change of <em>f</em>(<em>x</em>) = 3<em>x</em> + 2 on the interval [1, 5].", blanks:[{label:"ARC =", answer:3}], points:10 },
+      { type:"multiinput", prompt:"Find the average rate of change of <em>f</em>(<em>x</em>) = <em>x</em>² on the interval [1, 3].", blanks:[{label:"ARC =", answer:4}], points:10 },
+      { type:"multiinput", prompt:"Find the average rate of change of <em>f</em>(<em>x</em>) = 1/<em>x</em> on the interval [1, 4]. A fraction is fine.", blanks:[{label:"ARC =", answer:-0.25, answerText:"-1/4"}], points:10 },
+      { type:"tableinput", prompt:"Use the table to find the average rate of change of <em>f</em> on the interval [1, 3].", table:{ x:[0,1,2,3,4], f:[5,8,9,14,21] }, blanks:[{label:"ARC =", answer:3}], points:10 },
+      { type:"multiinput", prompt:"Find the average rate of change of <em>f</em>(<em>x</em>) = <em>x</em>² + 3<em>x</em> + 1 on [0, <em>a</em>]. Simplify in terms of <em>a</em>.", blanks:[{label:"ARC =", answer:"a + 3"}], points:10 },
+      { type:"graphinput", prompt:"Use the graph of <em>f</em> below. On what interval(s) is <em>f</em> increasing?", graph:"cubicTurns", blanks:[{label:"Increasing on", answer:"(-∞, -2) ∪ (2, ∞)"}], points:10 },
+      { type:"graphinput", prompt:"Use the same graph. On what interval is <em>f</em> decreasing?", graph:"cubicTurns", blanks:[{label:"Decreasing on", answer:"(-2, 2)"}], points:10 },
+      { type:"graphinput", prompt:"From the graph, identify the local maximum.", graph:"cubicTurns", blanks:[{label:"Maximum value =", answer:4},{label:"occurs at <em>x</em> =", answer:-2}], points:10 },
+      { type:"graphinput", prompt:"From the graph, identify the local minimum.", graph:"cubicTurns", blanks:[{label:"Minimum value =", answer:-4},{label:"occurs at <em>x</em> =", answer:2}], points:10 },
+      { type:"graphinput", prompt:"From the graph of <em>f</em>(<em>x</em>) = <em>x</em>² − 4, identify the absolute minimum.", graph:"parabMin", blanks:[{label:"Minimum value =", answer:-4},{label:"occurs at <em>x</em> =", answer:0}], points:10 },
+      { type:"graphinput", prompt:"Using the graph, find the average rate of change of <em>f</em> on the interval [−2, 2].", graph:"cubicTurns", blanks:[{label:"ARC =", answer:-2}], points:10 },
+      { type:"graphinput", prompt:"How many local extrema (turning points) does the graph have?", graph:"cubicTurns", blanks:[{label:"Number of extrema =", answer:2}], points:10 },
+      { type:"mc", prompt:"The average rate of change of a function over [<em>a</em>, <em>b</em>] equals:", options:["the slope of the secant line through (<em>a</em>, <em>f</em>(<em>a</em>)) and (<em>b</em>, <em>f</em>(<em>b</em>))","the value of <em>f</em> at the midpoint","the steepest slope on the interval","the <em>y</em>-intercept of <em>f</em>"], correct:0, points:10 },
+      { type:"mc", prompt:"A local maximum occurs at a point where the function changes from:", options:["increasing to decreasing","decreasing to increasing","positive to negative","concave up to concave down"], correct:0, points:10 },
+      { type:"mc", prompt:"A function is increasing on an interval when, as <em>x</em> increases, the output <em>f</em>(<em>x</em>):", options:["increases","decreases","stays constant","alternates sign"], correct:0, points:10 },
+      { type:"multiinput", prompt:"Over 6 hours, a car's distance from home goes from 10 miles to 292 miles. Find the average speed.", blanks:[{label:"Average speed (mph) =", answer:47}], points:10 },
+      { type:"multiinput", prompt:"A plant grows from 4 cm to 22 cm over 6 days. Find the average rate of change.", blanks:[{label:"ARC (cm/day) =", answer:3}], points:10 },
+      { type:"multiinput", prompt:"Find the average rate of change of <em>f</em>(<em>x</em>) = <em>x</em>³ on the interval [0, 2].", blanks:[{label:"ARC =", answer:4}], points:10 },
+      { type:"multiinput", prompt:"Find the average rate of change of <em>f</em>(<em>x</em>) = 4<em>x</em>² − 7 on the interval [1, 3].", blanks:[{label:"ARC =", answer:16}], points:10 }
+    ] },
+    { id:"1.4", title:"1.4 · Composition of Functions", graded:{}, questions: [
+      { type:"multiinput", prompt:"Let <em>f</em>(<em>x</em>) = 2<em>x</em> + 1 and <em>g</em>(<em>x</em>) = 3<em>x</em> − 2. Find the sum (<em>f</em> + <em>g</em>)(<em>x</em>). Write your answer in simplest form.", blanks:[{label:"(<em>f</em> + <em>g</em>)(<em>x</em>) =", answer:"5x-1", answerText:"5x − 1"}], points:10 },
+      { type:"multiinput", prompt:"With <em>f</em>(<em>x</em>) = 2<em>x</em> + 1 and <em>g</em>(<em>x</em>) = 3<em>x</em> − 2, find the difference (<em>f</em> − <em>g</em>)(<em>x</em>).", blanks:[{label:"(<em>f</em> − <em>g</em>)(<em>x</em>) =", answer:"-x+3", answerText:"3 − x"}], points:10 },
+      { type:"multiinput", prompt:"With <em>f</em>(<em>x</em>) = 2<em>x</em> + 1 and <em>g</em>(<em>x</em>) = 3<em>x</em> − 2, find (<em>g</em> − <em>f</em>)(<em>x</em>).", blanks:[{label:"(<em>g</em> − <em>f</em>)(<em>x</em>) =", answer:"x-3", answerText:"x − 3"}], points:10 },
+      { type:"multiinput", prompt:"With <em>f</em>(<em>x</em>) = 2<em>x</em> + 1 and <em>g</em>(<em>x</em>) = 3<em>x</em> − 2, find the product (<em>fg</em>)(<em>x</em>) and expand fully. (Use ^ for exponents, e.g. x^2.)", blanks:[{label:"(<em>fg</em>)(<em>x</em>) =", answer:"6x^2-x-2", answerText:"6x² − x − 2"}], points:10 },
+      { type:"multiinput", prompt:"For the quotient (<em>f</em>/<em>g</em>)(<em>x</em>) with <em>g</em>(<em>x</em>) = 3<em>x</em> − 2, which value of <em>x</em> must be excluded from the domain?", blanks:[{label:"<em>x</em> =", answer:0.6666666666666666, answerText:"2/3"}], points:10 },
+      { type:"multiinput", prompt:"Let <em>f</em>(<em>x</em>) = <em>x</em>² + 1 and <em>g</em>(<em>x</em>) = <em>x</em> − 3. Find the composition <em>f</em>(<em>g</em>(<em>x</em>)) and expand fully.", blanks:[{label:"<em>f</em>(<em>g</em>(<em>x</em>)) =", answer:"x^2-6x+10", answerText:"x² − 6x + 10"}], points:10 },
+      { type:"multiinput", prompt:"With <em>f</em>(<em>x</em>) = <em>x</em>² + 1 and <em>g</em>(<em>x</em>) = <em>x</em> − 3, find <em>g</em>(<em>f</em>(<em>x</em>)).", blanks:[{label:"<em>g</em>(<em>f</em>(<em>x</em>)) =", answer:"x^2-2", answerText:"x² − 2"}], points:10 },
+      { type:"multiinput", prompt:"With <em>f</em>(<em>x</em>) = <em>x</em>² + 1 and <em>g</em>(<em>x</em>) = <em>x</em> − 3, evaluate <em>f</em>(<em>g</em>(5)).", blanks:[{label:"<em>f</em>(<em>g</em>(5)) =", answer:5}], points:10 },
+      { type:"multiinput", prompt:"With <em>f</em>(<em>x</em>) = <em>x</em>² + 1 and <em>g</em>(<em>x</em>) = <em>x</em> − 3, evaluate <em>g</em>(<em>f</em>(4)).", blanks:[{label:"<em>g</em>(<em>f</em>(4)) =", answer:14}], points:10 },
+      { type:"multiinput", prompt:"With <em>f</em>(<em>x</em>) = <em>x</em>² + 1 and <em>g</em>(<em>x</em>) = <em>x</em> − 3, evaluate <em>f</em>(<em>g</em>(0)).", blanks:[{label:"<em>f</em>(<em>g</em>(0)) =", answer:10}], points:10 },
+      { type:"multiinput", prompt:"Use the table of values below.<br>"+T14+"Evaluate <em>f</em>(<em>g</em>(2)).", blanks:[{label:"<em>f</em>(<em>g</em>(2)) =", answer:5}], points:10 },
+      { type:"multiinput", prompt:"Use the same table.<br>"+T14+"Evaluate <em>g</em>(<em>f</em>(3)).", blanks:[{label:"<em>g</em>(<em>f</em>(3)) =", answer:4}], points:10 },
+      { type:"multiinput", prompt:"Use the same table.<br>"+T14+"Evaluate <em>f</em>(<em>f</em>(5)).", blanks:[{label:"<em>f</em>(<em>f</em>(5)) =", answer:5}], points:10 },
+      { type:"multiinput", prompt:"Use the same table.<br>"+T14+"Evaluate <em>g</em>(<em>g</em>(1)).", blanks:[{label:"<em>g</em>(<em>g</em>(1)) =", answer:4}], points:10 },
+      { type:"multiinput", prompt:"Let <em>f</em>(<em>x</em>) = √<em>x</em> and <em>g</em>(<em>x</em>) = <em>x</em> − 4. State the domain of (<em>f</em> ∘ <em>g</em>)(<em>x</em>) = √(<em>x</em> − 4) in interval notation.", blanks:[{label:"Domain:", answer:"[4,∞)", answerText:"[4, ∞)"}], points:10 },
+      { type:"multiinput", prompt:"Let <em>f</em>(<em>x</em>) = 1/<em>x</em> and <em>g</em>(<em>x</em>) = <em>x</em> + 3. State the domain of (<em>f</em> ∘ <em>g</em>)(<em>x</em>) = 1/(<em>x</em> + 3) in interval notation.", blanks:[{label:"Domain:", answer:"(-∞,-3)∪(-3,∞)", answerText:"(−∞, −3) ∪ (−3, ∞)"}], points:10 },
+      { type:"mc", prompt:"Which decomposition expresses <em>h</em>(<em>x</em>) = (<em>x</em> + 1)³ as <em>f</em>(<em>g</em>(<em>x</em>))?", options:["<em>f</em>(<em>x</em>) = <em>x</em>³, <em>g</em>(<em>x</em>) = <em>x</em> + 1","<em>f</em>(<em>x</em>) = <em>x</em> + 1, <em>g</em>(<em>x</em>) = <em>x</em>³","<em>f</em>(<em>x</em>) = 3<em>x</em>, <em>g</em>(<em>x</em>) = <em>x</em> + 1","<em>f</em>(<em>x</em>) = <em>x</em> + 1, <em>g</em>(<em>x</em>) = 3"], correct:0, points:10 },
+      { type:"mc", prompt:"Which decomposition expresses <em>h</em>(<em>x</em>) = √(3<em>x</em> − 2) as <em>f</em>(<em>g</em>(<em>x</em>))?", options:["<em>f</em>(<em>x</em>) = √<em>x</em>, <em>g</em>(<em>x</em>) = 3<em>x</em> − 2","<em>f</em>(<em>x</em>) = 3<em>x</em> − 2, <em>g</em>(<em>x</em>) = √<em>x</em>","<em>f</em>(<em>x</em>) = 3√<em>x</em>, <em>g</em>(<em>x</em>) = <em>x</em> − 2","<em>f</em>(<em>x</em>) = √(3<em>x</em>), <em>g</em>(<em>x</em>) = −2"], correct:0, points:10 },
+      { type:"mc", prompt:"Which decomposition expresses <em>h</em>(<em>x</em>) = 5 / (<em>x</em>² + 4) as <em>f</em>(<em>g</em>(<em>x</em>))?", options:["<em>f</em>(<em>x</em>) = 5/<em>x</em>, <em>g</em>(<em>x</em>) = <em>x</em>² + 4","<em>f</em>(<em>x</em>) = <em>x</em>² + 4, <em>g</em>(<em>x</em>) = 5/<em>x</em>","<em>f</em>(<em>x</em>) = 5, <em>g</em>(<em>x</em>) = <em>x</em>² + 4","<em>f</em>(<em>x</em>) = 5<em>x</em>, <em>g</em>(<em>x</em>) = <em>x</em>² + 4"], correct:0, points:10 },
+      { type:"mc", prompt:"The composition (<em>f</em> ∘ <em>g</em>)(<em>x</em>) means:", options:["<em>f</em>(<em>g</em>(<em>x</em>)) — apply <em>g</em> first, then <em>f</em>","<em>g</em>(<em>f</em>(<em>x</em>)) — apply <em>f</em> first, then <em>g</em>","<em>f</em>(<em>x</em>) · <em>g</em>(<em>x</em>) — multiply the outputs","<em>f</em>(<em>x</em>) + <em>g</em>(<em>x</em>) — add the outputs"], correct:0, points:10 }
+    ] },
+    { id:"1.3", title:"1.3 · Rates of Change & Behavior of Graphs", graded:{}, qcount:12, questions: [
+      { type:"multiinput", prompt:"The table below gives the annual sales (in millions) of a product.<br>"+T13B+"What was the average rate of change of annual sales:", blanks:[
+        {label:"a) between 2022 and 2023? (millions $/yr) =", answer:-3},
+        {label:"b) between 2022 and 2025? (millions $/yr) =", answer:-9}
+      ], points:10 },
+      { type:"graphinput", prompt:"Based on the graph above, estimate (to one decimal place) the average rate of change from <em>x</em> = 1 to <em>x</em> = 5.", graph:"salesWave", blanks:[{label:"Average rate of change ≈", answer:1.5}], points:10 },
+      { type:"multiinput", prompt:"Find the average rate of change of <em>g</em>(<em>x</em>) = 4<em>x</em>³ + 4 from <em>x</em> = −2 to <em>x</em> = 3.", blanks:[{label:"ARC =", answer:28}], points:10 },
+      { type:"multiinput", prompt:"Find the average rate of change of <em>g</em>(<em>x</em>) = 4<em>x</em>² + 5/<em>x</em>⁴ on the interval [−4, 1].", blanks:[{label:"ARC =", answer:-11.00390625, answerText:"−2817/256 ≈ −11.0039"}], points:10 },
+      { type:"multiinput", prompt:"Find the average rate of change of <em>f</em>(<em>x</em>) = 6<em>x</em>² − 3 on the interval [2, <em>b</em>]. Your answer will be an expression involving <em>b</em>.", blanks:[{label:"ARC =", answer:"6b+12", answerText:"6b + 12"}], points:10 },
+      { type:"multiinput", prompt:"Given <em>f</em>(<em>x</em>) = 1/(<em>x</em> + 4), find the average rate of change of <em>f</em>(<em>x</em>) on the interval [7, 7 + <em>h</em>]. Your answer will be an expression involving <em>h</em>.", blanks:[{label:"ARC =", answer:"-1/(11(11+h))", answerText:"−1/(11(11 + h))"}], points:10 },
+      { type:"graphform", prompt:"For the graph below, determine if it represents a function that is increasing or decreasing.", graph:"decrCurve", fields:[
+        {kind:"select", label:"This function is", choices:["Increasing","Decreasing"], answer:1}
+      ], points:10 },
+      { type:"graphinput", prompt:"The function graphed above is increasing on some interval(s) and decreasing on others. Use the graph to state each in interval notation.", graph:"cubicTurns", blanks:[
+        {label:"Increasing on the interval(s):", answer:"(-∞,-2)∪(2,∞)"},
+        {label:"Decreasing on the interval(s):", answer:"(-2,2)"}
+      ], points:10 },
+      { type:"multiinput", prompt:"The function <em>f</em>(<em>x</em>) = 2<em>x</em>³ − 33<em>x</em>² + 168<em>x</em> + 10 has one local minimum and one local maximum. Use a graph of the function to estimate these local extrema.", blanks:[
+        {label:"Local minimum at <em>x</em> =", answer:7},
+        {label:"with output value:", answer:255},
+        {label:"Local maximum at <em>x</em> =", answer:4},
+        {label:"with output value:", answer:282}
+      ], points:10 },
+      { type:"graphform", prompt:"Consider the function graphed at right.", graph:"parabMax3", fields:[
+        {kind:"select", label:"The function has a", choices:["minimum","maximum"], answer:1},
+        {kind:"input", label:"of", answer:2},
+        {kind:"input", label:"at <em>x</em> =", answer:3},
+        {kind:"input", label:"Increasing on the interval(s):", answer:"(-∞,3)"},
+        {kind:"input", label:"Decreasing on the interval(s):", answer:"(3,∞)"}
+      ], points:10 },
+      { type:"graphinput", prompt:"Find the absolute maximum and minimum for the given graph. Give your answer as an ordered pair.", graph:"parabArc", blanks:[
+        {label:"Absolute maximum:", answer:"(0,4)"},
+        {label:"Absolute minimum:", answer:"(3,-5)"}
+      ], points:10 },
+      { type:"graphinput", prompt:"Consider the function in the graph below.", graph:"cubicMaxMin", blanks:[
+        {label:"The function has a maximum of:", answer:6},
+        {label:"&nbsp;&nbsp;&nbsp;at <em>x</em> =", answer:-3},
+        {label:"The function has a minimum of:", answer:0},
+        {label:"&nbsp;&nbsp;&nbsp;at <em>x</em> =", answer:3},
+        {label:"Increasing on the interval(s):", answer:"(-∞,-3)∪(3,∞)"},
+        {label:"Decreasing on the interval(s):", answer:"(-3,3)"},
+        {label:"The domain of the function is:", answer:"(-∞,∞)"},
+        {label:"The range of the function is:", answer:"(-∞,∞)"}
+      ], points:10 }
+    ] },
+    { id:"1.5", title:"1.5 · Transformation of Functions", graded:{}, questions: [
+      { type:"mc", prompt:"If <em>g</em>(<em>x</em>) = <em>f</em>(<em>x</em>) + 3, the graph of <em>g</em> is the graph of <em>f</em> shifted:", options:["up 3 units","down 3 units","right 3 units","left 3 units"], correct:0, points:10 },
+      { type:"mc", prompt:"The graph of <em>g</em>(<em>x</em>) = <em>f</em>(<em>x</em> − 2) is the graph of <em>f</em> shifted:", options:["right 2 units","left 2 units","up 2 units","down 2 units"], correct:0, points:10 },
+      { type:"mc", prompt:"The graph of <em>g</em>(<em>x</em>) = <em>f</em>(<em>x</em> + 4) is the graph of <em>f</em> shifted:", options:["left 4 units","right 4 units","up 4 units","down 4 units"], correct:0, points:10 },
+      { type:"multiinput", prompt:"Write the equation for <em>g</em>, the graph of <em>f</em>(<em>x</em>) = <em>x</em>² shifted up 5 units.", blanks:[{label:"<em>g</em>(<em>x</em>) =", answer:"x^2+5", answerText:"x² + 5"}], points:10 },
+      { type:"multiinput", prompt:"Write the equation for <em>g</em>, the graph of <em>f</em>(<em>x</em>) = <em>x</em>² shifted right 3 units.", blanks:[{label:"<em>g</em>(<em>x</em>) =", answer:"(x-3)^2", answerText:"(x − 3)²"}], points:10 },
+      { type:"mc", prompt:"Which function is <em>f</em>(<em>x</em>) = |<em>x</em>| shifted left 2 units and down 1 unit?", options:["<em>g</em>(<em>x</em>) = |<em>x</em> + 2| − 1","<em>g</em>(<em>x</em>) = |<em>x</em> − 2| − 1","<em>g</em>(<em>x</em>) = |<em>x</em> + 2| + 1","<em>g</em>(<em>x</em>) = |<em>x</em> − 1| − 2"], correct:0, points:10 },
+      { type:"mc", prompt:"The graph of <em>g</em>(<em>x</em>) = −<em>f</em>(<em>x</em>) is the graph of <em>f</em> reflected about the:", options:["<em>x</em>-axis","<em>y</em>-axis","line <em>y</em> = <em>x</em>","origin"], correct:0, points:10 },
+      { type:"mc", prompt:"The graph of <em>g</em>(<em>x</em>) = <em>f</em>(−<em>x</em>) is the graph of <em>f</em> reflected about the:", options:["<em>y</em>-axis","<em>x</em>-axis","line <em>y</em> = <em>x</em>","origin"], correct:0, points:10 },
+      { type:"multiinput", prompt:"Write the equation for the reflection of <em>f</em>(<em>x</em>) = <em>x</em>³ about the <em>x</em>-axis.", blanks:[{label:"<em>g</em>(<em>x</em>) =", answer:"-x^3", answerText:"−x³"}], points:10 },
+      { type:"multiinput", prompt:"Write the equation for the reflection of <em>f</em>(<em>x</em>) = 2<em>x</em> + 1 about the <em>y</em>-axis (replace <em>x</em> with −<em>x</em> and simplify).", blanks:[{label:"<em>g</em>(<em>x</em>) =", answer:"-2x+1", answerText:"−2x + 1"}], points:10 },
+      { type:"mc", prompt:"The transformation <em>g</em>(<em>x</em>) = 3<em>f</em>(<em>x</em>) represents a:", options:["vertical stretch by a factor of 3","vertical compression by a factor of 3","horizontal stretch by a factor of 3","horizontal compression by a factor of 3"], correct:0, points:10 },
+      { type:"mc", prompt:"The transformation <em>g</em>(<em>x</em>) = ½ <em>f</em>(<em>x</em>) represents a:", options:["vertical compression by a factor of 1/2","vertical stretch by a factor of 2","horizontal compression by a factor of 1/2","vertical shift down 1/2 unit"], correct:0, points:10 },
+      { type:"mc", prompt:"The transformation <em>g</em>(<em>x</em>) = <em>f</em>(2<em>x</em>) represents a:", options:["horizontal compression by a factor of 1/2","horizontal stretch by a factor of 2","vertical stretch by a factor of 2","vertical compression by a factor of 1/2"], correct:0, points:10 },
+      { type:"multiinput", prompt:"Write <em>g</em>(<em>x</em>): reflect <em>f</em>(<em>x</em>) = <em>x</em>² about the <em>x</em>-axis, then shift the result up 2 units.", blanks:[{label:"<em>g</em>(<em>x</em>) =", answer:"-x^2+2", answerText:"−x² + 2"}], points:10 },
+      { type:"mc", prompt:"A function whose graph is symmetric about the <em>y</em>-axis is:", options:["even","odd","neither","both even and odd"], correct:0, points:10 },
+      { type:"mc", prompt:"A function whose graph is symmetric about the origin is:", options:["odd","even","neither","linear"], correct:0, points:10 },
+      { type:"mc", prompt:"Is <em>f</em>(<em>x</em>) = <em>x</em>² − 4 even, odd, or neither? (Test <em>f</em>(−<em>x</em>).)", options:["even","odd","neither"], correct:0, points:10 },
+      { type:"mc", prompt:"Is <em>f</em>(<em>x</em>) = <em>x</em>³ − <em>x</em> even, odd, or neither? (Test <em>f</em>(−<em>x</em>).)", options:["odd","even","neither"], correct:0, points:10 },
+      { type:"mc", prompt:"Is <em>f</em>(<em>x</em>) = <em>x</em>³ + 2 even, odd, or neither? (Test <em>f</em>(−<em>x</em>).)", options:["neither","even","odd"], correct:0, points:10 },
+      { type:"multiinput", prompt:"The point (2, 5) lies on <em>y</em> = <em>f</em>(<em>x</em>). Give the corresponding point on each transformed graph, as an ordered pair.", blanks:[
+        {label:"on <em>y</em> = <em>f</em>(<em>x</em>) + 3:", answer:"(2,8)"},
+        {label:"on <em>y</em> = −<em>f</em>(<em>x</em>):", answer:"(2,-5)"}
+      ], points:10 }
+    ] },
+    { id:"1.6", title:"1.6 · Absolute Value Functions", graded:{}, questions: [
+      { type:"multiinput", prompt:"Evaluate |−7|.", blanks:[{label:"|−7| =", answer:7}], points:10 },
+      { type:"multiinput", prompt:"Evaluate |3 − 8|.", blanks:[{label:"|3 − 8| =", answer:5}], points:10 },
+      { type:"multiinput", prompt:"Evaluate |12| + |−4|.", blanks:[{label:"|12| + |−4| =", answer:16}], points:10 },
+      { type:"mc", prompt:"The absolute value |<em>x</em>| is best described as:", options:["the distance of <em>x</em> from 0 on the number line","a number that is always negative","the opposite (negative) of <em>x</em>","<em>x</em> multiplied by itself"], correct:0, points:10 },
+      { type:"mc", prompt:"The expression |<em>x</em> − 5| represents the distance between <em>x</em> and:", options:["5","−5","0","1"], correct:0, points:10 },
+      { type:"mc", prompt:"The graph of <em>f</em>(<em>x</em>) = |<em>x</em>| is shaped like a:", options:["V","U","straight line","circle"], correct:0, points:10 },
+      { type:"mc", prompt:"The graph of <em>f</em>(<em>x</em>) = −|<em>x</em>| is:", options:["an upside-down V that opens downward","a V that opens upward","a straight line through the origin","a parabola"], correct:0, points:10 },
+      { type:"multiinput", prompt:"The vertex of <em>f</em>(<em>x</em>) = |<em>x</em> − 2| + 3 is the point (<em>x</em>, <em>y</em>). Find each coordinate.", blanks:[{label:"<em>x</em> =", answer:2},{label:"<em>y</em> =", answer:3}], points:10 },
+      { type:"multiinput", prompt:"The vertex of <em>g</em>(<em>x</em>) = |<em>x</em> + 4| − 1 is the point (<em>x</em>, <em>y</em>). Find each coordinate.", blanks:[{label:"<em>x</em> =", answer:-4},{label:"<em>y</em> =", answer:-1}], points:10 },
+      { type:"mc", prompt:"<em>f</em>(<em>x</em>) = |<em>x</em>| + 5 is the graph of <em>f</em>(<em>x</em>) = |<em>x</em>| shifted:", options:["up 5 units","down 5 units","left 5 units","right 5 units"], correct:0, points:10 },
+      { type:"mc", prompt:"<em>f</em>(<em>x</em>) = |<em>x</em> − 3| is the graph of <em>f</em>(<em>x</em>) = |<em>x</em>| shifted:", options:["right 3 units","left 3 units","up 3 units","down 3 units"], correct:0, points:10 },
+      { type:"mc", prompt:"Which absolute value function has its vertex at (−2, 1)?", options:["<em>f</em>(<em>x</em>) = |<em>x</em> + 2| + 1","<em>f</em>(<em>x</em>) = |<em>x</em> − 2| + 1","<em>f</em>(<em>x</em>) = |<em>x</em> + 2| − 1","<em>f</em>(<em>x</em>) = |<em>x</em> − 1| + 2"], correct:0, points:10 },
+      { type:"graphinput", prompt:"From the graph of <em>f</em>(<em>x</em>) = |<em>x</em>| below, state the domain and range in interval notation.", graph:"absv", blanks:[{label:"Domain:", answer:"(-∞,∞)", answerText:"(−∞, ∞)"},{label:"Range:", answer:"[0,∞)", answerText:"[0, ∞)"}], points:10 },
+      { type:"multiinput", prompt:"State the range of <em>f</em>(<em>x</em>) = −|<em>x</em>| + 3 in interval notation. (It opens downward with a maximum value of 3.)", blanks:[{label:"Range:", answer:"(-∞,3]", answerText:"(−∞, 3]"}], points:10 },
+      { type:"mc", prompt:"The range of <em>f</em>(<em>x</em>) = |<em>x</em>| + 2 is:", options:["[2, ∞)","[0, ∞)","(−∞, 2]","(−∞, ∞)"], correct:0, points:10 },
+      { type:"multiinput", prompt:"Solve |<em>x</em>| = 6. (There are two solutions.)", blanks:[{label:"Larger solution: <em>x</em> =", answer:6},{label:"Smaller solution: <em>x</em> =", answer:-6}], points:10 },
+      { type:"multiinput", prompt:"Solve |<em>x</em> − 3| = 5. (Use <em>x</em> − 3 = ±5.)", blanks:[{label:"Larger solution: <em>x</em> =", answer:8},{label:"Smaller solution: <em>x</em> =", answer:-2}], points:10 },
+      { type:"multiinput", prompt:"Solve |2<em>x</em> + 1| = 9. (Use 2<em>x</em> + 1 = ±9.)", blanks:[{label:"Larger solution: <em>x</em> =", answer:4},{label:"Smaller solution: <em>x</em> =", answer:-5}], points:10 },
+      { type:"multiinput", prompt:"Solve the inequality |<em>x</em>| &lt; 4. Write the solution set in interval notation.", blanks:[{label:"Solution:", answer:"(-4,4)", answerText:"(−4, 4)"}], points:10 },
+      { type:"multiinput", prompt:"Solve the inequality |<em>x</em>| ≥ 3. Write the solution set in interval notation.", blanks:[{label:"Solution:", answer:"(-∞,-3]∪[3,∞)", answerText:"(−∞, −3] ∪ [3, ∞)"}], points:10 }
+    ] },
+    { id:"1.7", title:"1.7 · Inverse Functions", graded:{}, questions: [
+      { type:"mc", prompt:"A function has an inverse that is also a function if and only if the function is:", options:["one-to-one","continuous","linear","always increasing"], correct:0, points:10 },
+      { type:"mc", prompt:"Which graphical test determines whether a function is one-to-one (and therefore invertible)?", options:["the horizontal line test","the vertical line test","the slope test","the symmetry test"], correct:0, points:10 },
+      { type:"mc", prompt:"If <em>f</em> and <em>g</em> are inverse functions, then <em>f</em>(<em>g</em>(<em>x</em>)) =", options:["<em>x</em>","1","0","<em>f</em>(<em>x</em>) · <em>g</em>(<em>x</em>)"], correct:0, points:10 },
+      { type:"mc", prompt:"The graph of <em>f</em><sup>−1</sup> is the graph of <em>f</em> reflected over the line:", options:["<em>y</em> = <em>x</em>","the <em>x</em>-axis","the <em>y</em>-axis","<em>y</em> = −<em>x</em>"], correct:0, points:10 },
+      { type:"multiinput", prompt:"If <em>f</em>(3) = 7, find <em>f</em><sup>−1</sup>(7).", blanks:[{label:"<em>f</em><sup>−1</sup>(7) =", answer:3}], points:10 },
+      { type:"multiinput", prompt:"If <em>f</em>(−2) = 5, find <em>f</em><sup>−1</sup>(5).", blanks:[{label:"<em>f</em><sup>−1</sup>(5) =", answer:-2}], points:10 },
+      { type:"multiinput", prompt:"Use the table of values below.<br>"+T17+"Find <em>f</em><sup>−1</sup>(7).", blanks:[{label:"<em>f</em><sup>−1</sup>(7) =", answer:3}], points:10 },
+      { type:"multiinput", prompt:"Use the same table.<br>"+T17+"Find <em>f</em><sup>−1</sup>(9).", blanks:[{label:"<em>f</em><sup>−1</sup>(9) =", answer:4}], points:10 },
+      { type:"multiinput", prompt:"Find the inverse of <em>f</em>(<em>x</em>) = <em>x</em> + 4. (Swap <em>x</em> and <em>y</em>, then solve for <em>y</em>.)", blanks:[{label:"<em>f</em><sup>−1</sup>(<em>x</em>) =", answer:"x-4", answerText:"x − 4"}], points:10 },
+      { type:"multiinput", prompt:"Find the inverse of <em>f</em>(<em>x</em>) = 2<em>x</em>.", blanks:[{label:"<em>f</em><sup>−1</sup>(<em>x</em>) =", answer:"x/2", answerText:"x/2"}], points:10 },
+      { type:"multiinput", prompt:"Find the inverse of <em>f</em>(<em>x</em>) = 2<em>x</em> − 6.", blanks:[{label:"<em>f</em><sup>−1</sup>(<em>x</em>) =", answer:"(x+6)/2", answerText:"(x + 6)/2"}], points:10 },
+      { type:"multiinput", prompt:"Find the inverse of <em>f</em>(<em>x</em>) = 3<em>x</em> + 1.", blanks:[{label:"<em>f</em><sup>−1</sup>(<em>x</em>) =", answer:"(x-1)/3", answerText:"(x − 1)/3"}], points:10 },
+      { type:"multiinput", prompt:"Find the inverse of <em>f</em>(<em>x</em>) = (<em>x</em> − 5)/2.", blanks:[{label:"<em>f</em><sup>−1</sup>(<em>x</em>) =", answer:"2x+5", answerText:"2x + 5"}], points:10 },
+      { type:"mc", prompt:"To verify that <em>f</em> and <em>g</em> are inverse functions, you must show that:", options:["<em>f</em>(<em>g</em>(<em>x</em>)) = <em>x</em> and <em>g</em>(<em>f</em>(<em>x</em>)) = <em>x</em>","<em>f</em>(<em>x</em>) = <em>g</em>(<em>x</em>)","<em>f</em>(<em>x</em>) · <em>g</em>(<em>x</em>) = 1","<em>f</em>(<em>x</em>) + <em>g</em>(<em>x</em>) = 0"], correct:0, points:10 },
+      { type:"mc", prompt:"The domain of <em>f</em><sup>−1</sup> is equal to the ______ of <em>f</em>.", options:["range","domain","slope","<em>y</em>-intercept"], correct:0, points:10 },
+      { type:"mc", prompt:"Why does <em>f</em>(<em>x</em>) = <em>x</em>² (with all real numbers as its domain) NOT have an inverse function?", options:["It fails the horizontal line test — it is not one-to-one","It is not continuous","It has no <em>y</em>-intercept","Its graph is not a function"], correct:0, points:10 },
+      { type:"mc", prompt:"To make <em>f</em>(<em>x</em>) = <em>x</em>² invertible, you can restrict its domain to:", options:["<em>x</em> ≥ 0","<em>x</em> ≠ 0","all real numbers","only <em>x</em> &lt; 0"], correct:0, points:10 },
+      { type:"mc", prompt:"The inverse of <em>f</em>(<em>x</em>) = <em>x</em>³ is:", options:["<em>f</em><sup>−1</sup>(<em>x</em>) = ∛<em>x</em>","<em>f</em><sup>−1</sup>(<em>x</em>) = <em>x</em>³","<em>f</em><sup>−1</sup>(<em>x</em>) = 3<em>x</em>","<em>f</em><sup>−1</sup>(<em>x</em>) = <em>x</em>/3"], correct:0, points:10 },
+      { type:"multiinput", prompt:"Given <em>f</em>(<em>x</em>) = <em>x</em> + 7, find <em>f</em><sup>−1</sup>(10).", blanks:[{label:"<em>f</em><sup>−1</sup>(10) =", answer:3}], points:10 },
+      { type:"mc", prompt:"Which pair of functions are inverses of each other?", options:["<em>f</em>(<em>x</em>) = <em>x</em> + 2 and <em>g</em>(<em>x</em>) = <em>x</em> − 2","<em>f</em>(<em>x</em>) = 2<em>x</em> and <em>g</em>(<em>x</em>) = 2<em>x</em>","<em>f</em>(<em>x</em>) = <em>x</em>² and <em>g</em>(<em>x</em>) = 2<em>x</em>","<em>f</em>(<em>x</em>) = <em>x</em> + 1 and <em>g</em>(<em>x</em>) = <em>x</em> + 1"], correct:0, points:10 }
+    ] }
+    ];
+    // One hand-built "My set" per section: merge any non-generated decks that
+    // share a section id into a single deck (e.g. 1.3's OpenStax + school WebWork
+    // questions become one My set). Generated AI sets stay separate.
+    (function mergeMySets(){
+      var first = {}, out = [];
+      DECKS.forEach(function(d){
+        if (!d.generated && first[d.id]) { first[d.id].questions = first[d.id].questions.concat(d.questions); return; }
+        if (!d.generated) first[d.id] = d;
+        out.push(d);
+      });
+      out.forEach(function(d){ if (!d.generated) { d.qcount = d.questions.length; d.total = d.qcount * 10; } });
+      DECKS = out;
+    })();
+    var DEFAULT_QCOUNT = 20;
+    var curDeck = 0;
+    DECKS.forEach(function(d){ d.qcount = d.qcount || DEFAULT_QCOUNT; while (d.questions.length < d.qcount) d.questions.push({ type: "placeholder", points: 10 }); d.total = d.qcount * 10; });
+
+    // Persist quiz progress across sessions (localStorage, keyed by section id).
+    // Only hand-built "My set" decks are saved — AI sets are regenerated fresh.
+    var PROGRESS_KEY = "inkling-quiz-progress";
+    function loadProgress(){ try { return JSON.parse(localStorage.getItem(PROGRESS_KEY) || "{}") || {}; } catch(_){ return {}; } }
+    function persistProgress(){ try { var m=loadProgress(); if(!DECKS[curDeck].generated){ m[DECKS[curDeck].id]=DECKS[curDeck].graded; localStorage.setItem(PROGRESS_KEY, JSON.stringify(m)); } } catch(_){} }
+    (function restoreProgress(){
+      var prog = loadProgress();
+      DECKS.forEach(function(d){ if (!d.generated && prog[d.id] && typeof prog[d.id]==="object") d.graded = prog[d.id]; });
+    })();
+    // Remember where the user was (deck+question or home level) so a refresh reopens it.
+    var LOC_KEY = "inkling-quiz-location";
+    // Snapshot the last location NOW, before the initial render() can overwrite it.
+    var bootLoc = (function(){ try { return JSON.parse(localStorage.getItem(LOC_KEY) || "null"); } catch(_){ return null; } })();
+    function saveLocDeck(){ try { localStorage.setItem(LOC_KEY, JSON.stringify({ view:"deck", deckId:DECKS[curDeck].id, idx:idx })); } catch(_){} }
+    function saveLocHome(){ try { localStorage.setItem(LOC_KEY, JSON.stringify({ view:"home", homeView:(typeof homeView!=="undefined"?homeView:null) })); } catch(_){} }
+    var DECK = DECKS[curDeck].questions;
+    function qnum(i){ return DECKS[curDeck].id + "." + (i + 1); }
+
+    var idx = 0, lastFocusedAnsin = null;
+    var promptEl = document.getElementById("prompt"), optsEl = document.getElementById("opts");
+    var scoreEl = document.getElementById("score"), selEl = document.getElementById("sel");
+    var earnedEl = document.getElementById("earned"), menuEl = document.getElementById("menu");
+    var prevBtn = document.getElementById("prev"), nextqBtn = document.getElementById("nextq");
+    var nextBtn = document.getElementById("next"), submitBtn = document.getElementById("submit"), answerBtn = document.getElementById("answer");
+
+    function setEarned(){ var e=0, g=DECKS[curDeck].graded; for (var k in g) e+=g[k]; earnedEl.textContent = "🏆 Earned " + e + " / " + DECKS[curDeck].total; var pb=document.querySelector(".pts"); if(pb) pb.textContent = DECKS[curDeck].total + " pts"; }
+    function openZoom(svg){ var ov=document.createElement("div"); ov.className="zoomov"; ov.innerHTML='<div class="zoombox">'+svg+'</div>'; ov.addEventListener("click",function(){ov.remove();}); document.body.appendChild(ov); }
+
+    function buildMenu(){
+      menuEl.innerHTML = "";
+      DECK.forEach(function(q,i){
+        var b=document.createElement("button"); b.setAttribute("role","menuitem"); if(i===idx)b.className="cur";
+        var gd=DECKS[curDeck].graded;
+        var tag = (gd[i]!=null) ? '<span class="tag">'+gd[i]+'/10</span>' : (q.type==="placeholder" ? '<span class="tag">soon</span>' : "");
+        b.innerHTML="<span>"+qnum(i)+"</span>"+tag;
+        b.addEventListener("click",function(){ idx=i; closeMenu(); render(); });
+        menuEl.appendChild(b);
+      });
+    }
+    function openMenu(){ buildMenu(); menuEl.classList.add("open"); }
+    function closeMenu(){ menuEl.classList.remove("open"); }
+
+    function render(){
+      var q = DECK[idx];
+      if (typeof resetTutorUI==="function") resetTutorUI();
+      scoreEl.textContent=""; scoreEl.style.color="var(--text)";
+      selEl.textContent = qnum(idx) + " ▾";
+      optsEl.innerHTML="";
+      prevBtn.disabled = (idx===0); nextqBtn.disabled = (idx>=DECK.length-1); nextBtn.disabled = (idx>=DECK.length-1);
+      var ph = (q.type==="placeholder");
+      submitBtn.disabled = ph; answerBtn.disabled = ph;
+      if (ph) {
+        promptEl.innerHTML = "Question <strong>"+qnum(idx)+"</strong>";
+        optsEl.innerHTML = '<div class="empty">This question hasn’t been built yet.<br>Send it over and it’ll drop right into this slot.</div>';
+      } else if (q.type==="mc") {
+        promptEl.innerHTML = q.prompt;
+        q.options.forEach(function(t,i){
+          var row=document.createElement("label"); row.className="opt"; row.setAttribute("data-i",i);
+          row.innerHTML='<input type="radio" name="q" aria-label="Option '+(i+1)+'"><span class="otext">'+t+'</span><span class="mark"></span>';
+          optsEl.appendChild(row);
+        });
+      } else if (q.type==="select") {
+        promptEl.innerHTML = q.prompt;
+        var mk = function(item){ return (q.media==="table") ? tableHTML(item) : graphSVG(item); };
+        var mcls = (q.media==="table") ? "qmedia" : "qmedia gfx";
+        if (q.layout==="horizontal") {
+          var grid=document.createElement("div"); grid.className="hgrid";
+          grid.style.gridTemplateColumns="repeat("+Math.min(q.items.length,4)+",1fr)";
+          q.items.forEach(function(item,i){
+            var cell=document.createElement("div"); cell.className="hcell"; cell.setAttribute("data-i",i);
+            cell.innerHTML='<div class="'+mcls+'">'+mk(item)+'</div><div class="hpick"><input type="checkbox" aria-label="Item '+(i+1)+'"><span class="mark"></span></div>';
+            grid.appendChild(cell);
+          });
+          optsEl.appendChild(grid);
+        } else {
+          q.items.forEach(function(item,i){
+            var row=document.createElement("div"); row.className="opt"; row.setAttribute("data-i",i);
+            var zoom = (q.media==="table") ? "" : '<button class="zoom" aria-label="Zoom item '+(i+1)+'">🔍</button>';
+            row.innerHTML='<input type="checkbox" aria-label="Item '+(i+1)+'"><div class="'+mcls+'">'+mk(item)+'</div>'+zoom+'<span class="mark"></span>';
+            optsEl.appendChild(row);
+          });
+        }
+      } else if (q.type==="input") {
+        promptEl.innerHTML = q.prompt;
+        optsEl.innerHTML =
+          '<div class="grow"><div class="qmedia gfx" style="width:210px;max-width:62%">'+graphSVG(q.graph)+'</div><button class="zoom" aria-label="Zoom graph">🔍</button></div>'
+          + '<div class="ask">'+q.ask+'</div>'
+          + '<div class="inwrap"><span class="inlabel">'+q.label+'</span>'+ansInputHTML(q.answer,'aria-label="Your answer"')+'<span class="mark"></span></div>';
+      } else if (q.type==="tableinput") {
+        promptEl.innerHTML = q.prompt;
+        var html = '<div class="tscroll">'+tableHTML(q.table)+'</div>';
+        q.blanks.forEach(function(b,bi){
+          html += (b.ask?'<div class="ask">'+b.ask+'</div>':'')+'<div class="inwrap"><span class="inlabel">'+b.label+'</span>'+ansInputHTML(b.answer,'data-b="'+bi+'" aria-label="Answer '+(bi+1)+'"')+'<span class="mark"></span></div>';
+        });
+        optsEl.innerHTML = html;
+      } else if (q.type==="graphinput") {
+        promptEl.innerHTML = q.prompt;
+        var gh = '<div class="grow"><div class="qmedia gfx" style="width:210px;max-width:62%">'+graphSVG(q.graph)+'</div><button class="zoom" aria-label="Zoom graph">🔍</button></div>';
+        q.blanks.forEach(function(b,bi){
+          gh += (b.ask?'<div class="ask">'+b.ask+'</div>':'')+'<div class="inwrap"><span class="inlabel">'+b.label+'</span>'+ansInputHTML(b.answer,'data-b="'+bi+'" aria-label="Answer '+(bi+1)+'"')+'<span class="mark"></span></div>';
+        });
+        optsEl.innerHTML = gh;
+      } else if (q.type==="multiinput") {
+        promptEl.innerHTML = q.prompt;
+        var mh = "";
+        q.blanks.forEach(function(b,bi){ mh += '<div class="inwrap" style="margin:7px 0"><span class="inlabel">'+b.label+'</span>'+ansInputHTML(b.answer,'data-b="'+bi+'" aria-label="Answer '+(bi+1)+'"')+'<span class="mark"></span></div>'; });
+        optsEl.innerHTML = mh;
+      } else if (q.type==="graphform") {
+        promptEl.innerHTML = q.prompt;
+        var ff = q.graph ? '<div class="grow"><div class="qmedia gfx" style="width:210px;max-width:62%">'+graphSVG(q.graph)+'</div><button class="zoom" aria-label="Zoom graph">🔍</button></div>' : '';
+        q.fields.forEach(function(f,fi){
+          if (f.kind==="select"){
+            var o='<option value=""></option>';
+            f.choices.forEach(function(c,k){ o+='<option value="'+k+'">'+c+'</option>'; });
+            ff += '<div class="inwrap" style="margin:7px 0"><span class="inlabel">'+(f.label||"")+'</span><select class="ffield fsel" data-f="'+fi+'" aria-label="Field '+(fi+1)+'">'+o+'</select><span class="mark"></span></div>';
+          } else {
+            ff += '<div class="inwrap" style="margin:7px 0"><span class="inlabel">'+(f.label||"")+'</span>'+ansInputHTML(f.answer,'data-f="'+fi+'" aria-label="Field '+(fi+1)+'"','ffield')+'<span class="mark"></span></div>';
+          }
+        });
+        optsEl.innerHTML = ff;
+      } else if (q.type==="match") {
+        promptEl.innerHTML = q.prompt;
+        var L="abcdefghijkl".split("");
+        var leftH="", rightH="";
+        q.items.forEach(function(it,i){
+          var o='<option value=""></option>';
+          for(var k=0;k<q.options.length;k++){ o+='<option value="'+k+'">'+L[k]+'</option>'; }
+          if (it.eq) {
+            leftH += '<div class="mrow"><select class="msel" aria-label="Match '+(i+1)+'">'+o+'</select><span class="meq">'+it.eq+'</span><span class="mark"></span></div>';
+          } else {
+            var im = (q.itemMedia==="graph") ? '<div class="qmedia gfx">'+graphSVG(it.data)+'</div>' : '<div class="qmedia">'+tableHTML(it.data)+'</div>';
+            leftH += '<div class="mrow lmrow"><div class="lmtop"><select class="msel" aria-label="Match '+(i+1)+'">'+o+'</select><span class="mark"></span></div>'+im+'</div>';
+          }
+        });
+        q.options.forEach(function(op,k){
+          if (q.media==="graph") rightH += '<div class="mopt mgfx"><span class="mlbl">'+L[k]+'.</span><div class="qmedia gfx">'+graphSVG(op)+'</div><button class="zoom" aria-label="Zoom '+L[k]+'">🔍</button></div>';
+          else if (q.media==="table") rightH += '<div class="mopt mgfx"><span class="mlbl">'+L[k]+'.</span><div class="qmedia">'+tableHTML(op)+'</div></div>';
+          else rightH += '<div class="mopt">'+L[k]+'. '+op+'</div>';
+        });
+        optsEl.innerHTML = '<div class="matchwrap"><div class="mleft">'+leftH+'</div><div class="mright">'+rightH+'</div></div>';
+      } else if (q.type==="labelmatch") {
+        promptEl.innerHTML = q.prompt;
+        var lh="";
+        q.items.forEach(function(it,i){
+          var o='<option value=""></option>';
+          q.choices.forEach(function(c,k){ o+='<option value="'+k+'">'+c+'</option>'; });
+          var media = (q.media==="graph") ? '<div class="qmedia gfx">'+graphSVG(it.data)+'</div>' : tableHTML(it.data);
+          lh += '<div class="mrow lmrow"><div class="lmtop"><select class="msel" aria-label="Item '+(i+1)+'">'+o+'</select><span class="mark"></span></div><div class="lmmedia">'+media+'</div></div>';
+        });
+        optsEl.innerHTML = lh;
+      }
+      if (!ph) {
+        var textFields = (q.fields||[]).filter(function(f){ return f.kind!=="select"; });
+        var hasTextInput = (q.blanks && q.blanks.length) || textFields.length;
+        if (hasTextInput) {
+          var allAns = (q.blanks||[]).map(function(b){ return b.answer; }).concat(textFields.map(function(f){ return f.answer; }));
+          optsEl.insertAdjacentHTML("beforeend", buildMathPad(allAns.some(isIntervalStr) ? "Interval" : "Basic"));
+        }
+      }
+      if (!ph && DECKS[curDeck].graded[idx]!=null) { var gv=DECKS[curDeck].graded[idx]; scoreEl.textContent = gv+" / "+q.points; scoreEl.style.color=(gv===q.points)?"var(--ok)":"var(--text)"; }
+      document.querySelector("main").scrollTop = 0;
+      saveLocDeck();
+    }
+
+    function clearMarks(){ [].forEach.call(optsEl.querySelectorAll("[data-i]"),function(r){ r.classList.remove("ok","bad"); r.querySelector(".mark").textContent=""; }); }
+    function finishGrade(pts,max){
+      DECKS[curDeck].graded[idx]=pts; setEarned(); persistProgress();
+      scoreEl.textContent = pts+" / "+max+" ("+Math.round((pts/max)*100)+"%)";
+      scoreEl.style.color = (pts===max)?"var(--ok)":"var(--text)";
+    }
+    function grade(){
+      var q=DECK[idx]; if(q.type==="placeholder") return;
+      if (q.type==="input") {
+        var inp=optsEl.querySelector(".ansin"), mk=optsEl.querySelector(".mark");
+        if (!(aval(inp)||"").trim()) { scoreEl.textContent="Type an answer"; return; }
+        inp.classList.remove("ok","bad");
+        var parsed=evalAnswer(numText(inp));
+        var correct=(parsed!==null && Math.abs(parsed-q.answer)<1e-9);
+        inp.classList.add(correct?"ok":"bad"); if(mk) mk.textContent=correct?"✓":"✗";
+        finishGrade(correct?q.points:0, q.points);
+        return;
+      }
+      if (q.type==="tableinput" || q.type==="graphinput" || q.type==="multiinput") {
+        var inps=optsEl.querySelectorAll(".ansin"), ok2=0, pendingWord=[];
+        [].forEach.call(inps,function(inp,bi){
+          inp.classList.remove("ok","bad");
+          var ans=q.blanks[bi].answer, right, av=aval(inp);
+          if (typeof ans === "number") { var p=evalAnswer(numText(inp)); right=(p!==null && Math.abs(p-ans)<1e-9); }
+          else if (/[a-z]/i.test(ans)) { right = isWordAnswer(ans) ? wordMatch(av, ans) : (exprEquiv(av, ans) || exprMatch(av, q.blanks[bi])); }
+          else { right = textMatch(av, q.blanks[bi]); }
+          inp.classList.add(right?"ok":"bad");
+          var mk=inp.nextElementSibling; if(mk&&mk.classList.contains("mark")) mk.textContent=right?"✓":"✗";
+          if(right)ok2++;
+          else if(isWordAnswer(ans) && (av||"").trim()) pendingWord.push({ inp:inp, bi:bi });
+        });
+        finishGrade(Math.round(ok2/q.blanks.length*q.points), q.points);
+        if (pendingWord.length) llmRegrade(q, pendingWord);  // synonyms / phrasing → AI second opinion
+        return;
+      }
+      if (q.type==="graphform") {
+        var ffs=optsEl.querySelectorAll(".ffield"), okf=0;
+        [].forEach.call(ffs,function(el){
+          var f=q.fields[parseInt(el.getAttribute("data-f"),10)], right;
+          el.classList.remove("ok","bad");
+          if (f.kind==="select"){ var v=(el.value===""?-1:parseInt(el.value,10)); right=(v===f.answer); }
+          else {
+            var ans=f.answer, av=aval(el);
+            if (typeof ans==="number"){ var p=evalAnswer(numText(el)); right=(p!==null && Math.abs(p-ans)<1e-9); }
+            else if (/[a-z]/i.test(ans)){ right = isWordAnswer(ans) ? wordMatch(av, ans) : (exprEquiv(av,ans)||exprMatch(av,{answer:ans})); }
+            else { right=textMatch(av,{answer:ans}); }
+          }
+          el.classList.add(right?"ok":"bad");
+          var mk=el.nextElementSibling; if(mk&&mk.classList.contains("mark")) mk.textContent=right?"✓":"✗";
+          if(right)okf++;
+        });
+        finishGrade(Math.round(okf/q.fields.length*q.points), q.points);
+        return;
+      }
+      if (q.type==="match" || q.type==="labelmatch") {
+        var mrows=optsEl.querySelectorAll(".mrow"), ok3=0;
+        [].forEach.call(mrows,function(row,i){
+          var sel=row.querySelector(".msel"); var v=(sel.value===""?-1:parseInt(sel.value,10));
+          var right=(v===q.items[i].answer);
+          row.classList.remove("ok","bad"); row.classList.add(right?"ok":"bad");
+          row.querySelector(".mark").textContent=right?"✓":"✗"; if(right)ok3++;
+        });
+        finishGrade(Math.round(ok3/q.items.length*q.points), q.points);
+        return;
+      }
+      var rows=optsEl.querySelectorAll("[data-i]"); clearMarks();
+      if (q.type==="mc") {
+        var sel=-1; [].forEach.call(rows,function(r,i){ if(r.querySelector("input").checked) sel=i; });
+        if (sel<0){ scoreEl.textContent="Pick an answer"; return; }
+        [].forEach.call(rows,function(row,i){
+          if(i===q.correct){row.classList.add("ok");row.querySelector(".mark").textContent="✓";}
+          else if(i===sel){row.classList.add("bad");row.querySelector(".mark").textContent="✗";}
+        });
+        finishGrade(sel===q.correct?q.points:0, q.points);
+      } else if (q.type==="select") {
+        var tc=q.answer.filter(Boolean).length, ti=q.answer.length-tc, cs=0, is=0;
+        [].forEach.call(rows,function(row,i){
+          var checked=row.querySelector("input").checked, right=(checked===q.answer[i]);
+          if(q.answer[i]&&checked)cs++; if(!q.answer[i]&&checked)is++;
+          row.classList.add(right?"ok":"bad"); row.querySelector(".mark").textContent=right?"✓":"✗";
+        });
+        var frac=Math.max(0, cs/tc - (ti?is/ti:0));
+        finishGrade(Math.round(frac*q.points), q.points);
+      }
+    }
+    function revealAnswer(){
+      var q=DECK[idx]; if(q.type==="placeholder") return;
+      if (q.type==="input") {
+        var inp=optsEl.querySelector(".ansin"), mk=optsEl.querySelector(".mark");
+        inp.classList.remove("bad"); inp.classList.add("ok");
+        setval(inp, (q.answerText!=null ? q.answerText : q.answer));
+        if(mk) mk.textContent="✓";
+        scoreEl.textContent="Answer key"; scoreEl.style.color="var(--ok)";
+        return;
+      }
+      if (q.type==="tableinput" || q.type==="graphinput" || q.type==="multiinput") {
+        [].forEach.call(optsEl.querySelectorAll(".ansin"),function(inp,bi){
+          inp.classList.remove("bad"); inp.classList.add("ok");
+          setval(inp, (q.blanks[bi].answerText!=null?q.blanks[bi].answerText:q.blanks[bi].answer));
+          var mk=inp.nextElementSibling; if(mk&&mk.classList.contains("mark")) mk.textContent="✓";
+        });
+        scoreEl.textContent="Answer key"; scoreEl.style.color="var(--ok)"; return;
+      }
+      if (q.type==="graphform") {
+        [].forEach.call(optsEl.querySelectorAll(".ffield"),function(el){
+          var f=q.fields[parseInt(el.getAttribute("data-f"),10)];
+          el.classList.remove("bad"); el.classList.add("ok");
+          if (f.kind==="select"){ el.value=String(f.answer); }
+          else { setval(el, (f.answerText!=null?f.answerText:f.answer)); }
+          var mk=el.nextElementSibling; if(mk&&mk.classList.contains("mark")) mk.textContent="✓";
+        });
+        scoreEl.textContent="Answer key"; scoreEl.style.color="var(--ok)"; return;
+      }
+      if (q.type==="match" || q.type==="labelmatch") {
+        [].forEach.call(optsEl.querySelectorAll(".mrow"),function(row,i){
+          row.querySelector(".msel").value=String(q.items[i].answer);
+          row.classList.remove("bad"); row.classList.add("ok"); row.querySelector(".mark").textContent="✓";
+        });
+        scoreEl.textContent="Answer key"; scoreEl.style.color="var(--ok)"; return;
+      }
+      clearMarks();
+      [].forEach.call(optsEl.querySelectorAll("[data-i]"),function(row,i){
+        var input=row.querySelector("input");
+        if (q.type==="mc"){ input.checked=(i===q.correct); if(i===q.correct){row.classList.add("ok");row.querySelector(".mark").textContent="✓";} }
+        else if (q.type==="select"){ input.checked=!!q.answer[i]; if(q.answer[i]){row.classList.add("ok");row.querySelector(".mark").textContent="✓";} }
+      });
+      scoreEl.textContent="Answer key"; scoreEl.style.color="var(--ok)";
+    }
+
+    optsEl.addEventListener("keydown",function(e){ if(e.key==="Enter" && e.target.classList && e.target.classList.contains("ansin")){ e.preventDefault(); grade(); } });
+    // Pop the keyboard up right below the input the user tapped (school-style).
+    optsEl.addEventListener("focusin",function(e){
+      if(e.target.classList && e.target.classList.contains("ansin")){
+        lastFocusedAnsin = e.target;
+        var pad=optsEl.querySelector(".mathpad");
+        if(pad){ (e.target.closest(".inwrap")||e.target).insertAdjacentElement("afterend", pad); pad.classList.remove("mp-closed"); }
+      }
+    });
+    optsEl.addEventListener("click",function(e){
+      var pad=e.target.closest(".mathpad");
+      if(pad){
+        if(e.target.closest(".mp-x")){ e.preventDefault(); pad.classList.add("mp-closed"); return; }
+        var tab=e.target.closest(".mp-tab");
+        if(tab){ e.preventDefault(); var t=tab.getAttribute("data-tab");
+          [].forEach.call(pad.querySelectorAll(".mp-tab"),function(x){ x.classList.toggle("on", x===tab); });
+          [].forEach.call(pad.querySelectorAll(".mp-grid"),function(g){ g.classList.toggle("on", g.getAttribute("data-grid")===t); });
+          return; }
+        var key=e.target.closest(".mp-key");
+        if(key){ e.preventDefault();
+          var inp=lastFocusedAnsin||optsEl.querySelector(".ansin"); if(!inp) return;
+          if(isMF(inp)){ mfKey(inp, key); return; }
+          var sk=key.getAttribute("data-k");
+          if(sk) mpSpecial(inp, sk);
+          else insertAtCursor(inp, key.getAttribute("data-b"), key.getAttribute("data-a")||"");
+          return; }
+        return;
+      }
+      var z=e.target.closest(".zoom");
+      if(z){ openZoom(z.parentElement.querySelector(".qmedia").innerHTML); return; }
+      var m=e.target.closest(".qmedia");
+      if(m){
+        var cell=m.closest("[data-i]");
+        if(cell && cell.classList.contains("hcell")){ openZoom(m.innerHTML); }
+        else if(cell){ var cb=cell.querySelector("input"); if(cb) cb.checked=!cb.checked; }
+        else { openZoom(m.innerHTML); }
+      }
+    });
+    document.getElementById("theme").addEventListener("click",function(){
+      var toLight=document.body.getAttribute("data-theme")!=="light";
+      document.body.setAttribute("data-theme",toLight?"light":"dark");
+      this.textContent=toLight?"🌙":"☀️";
+      try{ localStorage.setItem("inkling-quiz-theme",toLight?"light":"dark"); }catch(e){}
+    });
+    try{ if(localStorage.getItem("inkling-quiz-theme")==="light"){ document.body.setAttribute("data-theme","light"); document.getElementById("theme").textContent="🌙"; } }catch(e){}
+    selEl.addEventListener("click",function(e){ e.stopPropagation(); menuEl.classList.contains("open")?closeMenu():openMenu(); });
+    document.addEventListener("click",function(e){ if(!menuEl.contains(e.target)&&e.target!==selEl) closeMenu(); });
+    submitBtn.addEventListener("click",grade);
+    answerBtn.addEventListener("click",revealAnswer);
+    function go(d){ var n=idx+d; if(n>=0&&n<DECK.length){ idx=n; render(); } }
+    nextBtn.addEventListener("click",function(){ go(1); });
+    nextqBtn.addEventListener("click",function(){ go(1); });
+    prevBtn.addEventListener("click",function(){ go(-1); });
+
+    // Group decks into sections; multiple decks sharing an id become Set 1, Set 2, ...
+    var SECTIONS = [], secIndex = {};
+    var deckPick = document.getElementById("deckPick");
+    function rebuildSections(){
+      SECTIONS = []; secIndex = {};
+      DECKS.forEach(function(d,i){
+        if (secIndex[d.id]==null){ secIndex[d.id]=SECTIONS.length; SECTIONS.push({sec:d.id, decks:[]}); }
+        var s=SECTIONS[secIndex[d.id]]; s.decks.push(i); d.set = s.decks.length;
+      });
+      scopeDeckPick();
+    }
+
+    // ── Generated-deck ingestion (Inkling / Haiku → quiz format) ───────────────
+    // A generated set is plain JSON. Supported question "types" (the internal
+    // sorting structure for math questions):
+    //   { "type":"mc", "prompt":"…", "options":["…","…",…], "correct":<index> }
+    //   { "type":"multiinput", "prompt":"…",
+    //     "blanks":[{ "label":"…", "answer":<number | "expr" | "interval">, "answerText":"…"? }] }
+    // Answer routing at grade time: number→exact numeric; string with a letter→
+    // algebraic equivalence (exprEquiv); else interval/text match. So the AI just
+    // emits numbers for computed answers, expressions like "6x+12" for algebra, or
+    // interval strings like "(-∞, 3]"/"[0, ∞)" for domains/ranges.
+    // Pretty-print plain-text math for DISPLAY only (never the graded answer):
+    // sqrt(…)→√(…), x^2→x², b^2→b², +/-→±, <=/>=→≤/≥, infinity→∞, pi→π.
+    function prettyMath(s){
+      if (s == null) return s;
+      s = String(s);
+      s = s.replace(/\bsqrt\s*\(/gi, "√(");
+      s = s.replace(/\^(\d+)/g, function(_, d){ return d.replace(/\d/g, function(c){ return "⁰¹²³⁴⁵⁶⁷⁸⁹"[+c]; }); });
+      s = s.replace(/\+\/-/g, "±");
+      s = s.replace(/<=/g, "≤").replace(/>=/g, "≥").replace(/!=/g, "≠");
+      s = s.replace(/\binfinity\b/gi, "∞").replace(/\bpi\b/gi, "π");
+      return s;
+    }
+    function normalizeQuestion(q){
+      if (!q || typeof q !== "object" || !q.prompt) return null;
+      var points = (typeof q.points === "number" && q.points > 0) ? q.points : 10;
+      var prompt = prettyMath(String(q.prompt));
+      if (q.type === "mc") {
+        var options = Array.isArray(q.options) ? q.options.map(function(o){ return prettyMath(String(o)); }) : [];
+        if (options.length < 2) return null;
+        var correct = (typeof q.correct === "number" && q.correct >= 0 && q.correct < options.length) ? q.correct : 0;
+        return { type:"mc", prompt:prompt, options:options, correct:correct, points:points };
+      }
+      if (q.type === "multiinput" || q.type === "input" || q.type === "numeric" || q.type === "fill") {
+        var src = Array.isArray(q.blanks) ? q.blanks
+          : (q.answer != null ? [{ label:q.label, answer:q.answer, answerText:q.answerText }] : []);
+        var blanks = [];
+        src.forEach(function(b){
+          if (b == null || b.answer == null) return;
+          var ans = b.answer;
+          if (typeof ans === "string" && /^-?\d+(\.\d+)?$/.test(ans.trim())) ans = parseFloat(ans);
+          // answer stays RAW (graded); label + answerText are prettified (display).
+          var nb = { label: prettyMath(String(b.label || "Answer =")), answer: ans };
+          if (b.answerText != null) nb.answerText = prettyMath(String(b.answerText));
+          blanks.push(nb);
+        });
+        if (!blanks.length) return null;
+        return { type:"multiinput", prompt:prompt, blanks:blanks, points:points };
+      }
+      return null; // unsupported / unsafe type → skip
+    }
+    function normalizeDeck(raw){
+      if (!raw || typeof raw !== "object") return null;
+      var qsrc = Array.isArray(raw.questions) ? raw.questions : (Array.isArray(raw) ? raw : []);
+      var questions = [];
+      qsrc.forEach(function(q){ var nq = normalizeQuestion(q); if (nq) questions.push(nq); });
+      if (!questions.length) return null;
+      return {
+        id: String(raw.id || raw.section || raw.title || raw.topic || "AI").slice(0, 40),
+        title: String(raw.title || raw.topic || "Generated set").slice(0, 120),
+        graded: {}, qcount: questions.length, total: questions.length * 10, generated: true,
+        tier: raw.tier || null, questions: questions
+      };
+    }
+    function addGeneratedDeck(raw){
+      var d = normalizeDeck(raw);
+      if (!d) return false;
+      var existing = -1;
+      DECKS.forEach(function(x,i){ if (x.generated && x.id === d.id) existing = i; });
+      if (existing >= 0) DECKS[existing] = d; else DECKS.push(d);
+      rebuildSections();
+      var di = existing >= 0 ? existing : DECKS.length - 1;
+      // An AI set made FOR a precalc section (id like "1.1") joins that section as
+      // its ✨ AI Set — switch right into it. A brand-new subject (biology…) lands
+      // on the home as its own box.
+      if (isPrecalc(d.id)) switchDeck(di);
+      else if (typeof showHome === "function") showHome();
+      else switchDeck(di);
+      return true;
+    }
+    var setRow = document.getElementById("setRow");
+    function capTier(t){ return t ? String(t).charAt(0).toUpperCase() + String(t).slice(1) : ""; }
+    function buildSetRow(){
+      var s = SECTIONS[secIndex[DECKS[curDeck].id]];
+      setRow.innerHTML = "";
+      var aiIdx = s.decks.filter(function(di){ return DECKS[di].generated; })[0];
+      var aiDeck = aiIdx != null ? DECKS[aiIdx] : null;
+      var mineCount = s.decks.filter(function(di){ return !DECKS[di].generated; }).length;
+      var show = false;
+      // My set / AI set toggle (once both exist).
+      if (s.decks.length >= 2){
+        show = true;
+        var sl = document.createElement("span"); sl.className = "slbl"; sl.textContent = "Sets"; setRow.appendChild(sl);
+        var myN = 0;
+        s.decks.forEach(function(di){
+          var b = document.createElement("button");
+          b.className = "setbtn" + (di===curDeck ? " active" : "");
+          if (DECKS[di].generated) b.textContent = "✨ AI" + (DECKS[di].tier ? " · " + capTier(DECKS[di].tier) : "");
+          else { myN++; b.textContent = "📷 " + (mineCount > 1 ? "Set " + myN : "My set"); }
+          b.addEventListener("click", function(){ switchDeck(di); });
+          setRow.appendChild(b);
+        });
+        var nb = document.createElement("button");
+        nb.className = "setbtn newq"; nb.textContent = "🎲 Try new question";
+        nb.addEventListener("click", function(){
+          var keep=idx, k=s.decks.indexOf(curDeck), nd=s.decks[(k+1)%s.decks.length];
+          switchDeck(nd); if (keep < DECK.length){ idx=keep; render(); }
+        });
+        setRow.appendChild(nb);
+      }
+      // Difficulty-tier AI generator (precalc sections): make/remake the AI set at a tier.
+      if (isPrecalc(DECKS[curDeck].id)){
+        show = true;
+        var tl = document.createElement("span"); tl.className = "slbl"; tl.textContent = aiDeck ? "↻ AI tier:" : "✨ Make AI set:"; setRow.appendChild(tl);
+        [["easy","Easy"],["medium","Medium"],["hard","Hard"]].forEach(function(t){
+          var tb = document.createElement("button");
+          tb.className = "setbtn" + (aiDeck && aiDeck.tier === t[0] ? " active" : "");
+          tb.textContent = t[1];
+          tb.addEventListener("click", function(){ makeSectionAiSet(tb, t[0]); });
+          setRow.appendChild(tb);
+        });
+      }
+      setRow.style.display = show ? "flex" : "none";
+    }
+    function switchDeck(n){
+      curDeck = n; DECK = DECKS[curDeck].questions; idx = 0;
+      document.getElementById("deckTitle").textContent = DECKS[curDeck].title;
+      scopeDeckPick();
+      buildSetRow(); closeMenu(); setEarned(); render();
+    }
+    deckPick.addEventListener("change", function(){ switchDeck(SECTIONS[parseInt(this.value,10)].decks[0]); });
+
+    rebuildSections();
+    buildSetRow(); setEarned(); render();
+
+    // ── Study-set home (dismissible boxes) — the landing view ────────────────
+    var DISMISS_KEY = "inkling-quiz-dismissed";
+    function getDismissed(){ try { return JSON.parse(localStorage.getItem(DISMISS_KEY) || "{}") || {}; } catch(_){ return {}; } }
+    function setDismissed(o){ try { localStorage.setItem(DISMISS_KEY, JSON.stringify(o)); } catch(_){ } }
+    function dismissSection(sec){ var d = getDismissed(); d[sec] = 1; setDismissed(d); buildHome(); }
+    var homeGrid = document.getElementById("homeGrid");
+    function makeSectionBox(s){
+      var d0 = DECKS[s.decks[0]];
+      var g = d0.graded || {}, earned = 0; for (var k in g) earned += g[k];
+      var pct = d0.total ? Math.round(earned / d0.total * 100) : 0;
+      var titleText = String(d0.title || s.sec).replace(/^\s*[^·]*·\s*/, "");
+      var box = document.createElement("button");
+      box.type = "button";
+      box.className = "homebox" + (d0.generated ? " homebox--gen" : "");
+      box.innerHTML =
+        '<span class="hx" aria-label="Hide this set">✕</span>' +
+        '<div class="hsec">' + (d0.generated ? "✨ " : "") + s.sec + '</div>' +
+        '<div class="htitle">' + titleText + '</div>' +
+        '<div class="hmeta">' + s.decks.length + (s.decks.length > 1 ? " sets" : " set") + ' · ' + d0.qcount + ' Q' + (earned ? ' · ' + pct + '%' : '') + '</div>' +
+        '<div class="hbar"><i style="width:' + pct + '%"></i></div>';
+      box.addEventListener("click", function(e){
+        if (e.target.classList.contains("hx")) { e.stopPropagation(); dismissSection(s.sec); return; }
+        hideHome(); switchDeck(s.decks[0]);
+      });
+      return box;
+    }
+    function makeMiscBox(label, icon, fn){
+      var b = document.createElement("button");
+      b.type = "button"; b.className = "homebox homebox--add";
+      b.innerHTML = '<div style="font-size:24px">' + icon + '</div><div>' + label + '</div>';
+      b.addEventListener("click", fn);
+      return b;
+    }
+    function isPrecalc(sec){ return /^\d+\.\d+$/.test(sec); }     // 1.1, 1.2, … = section of chapter 1
+    function chapterOf(sec){ return parseInt(String(sec).split(".")[0], 10); }
+    function chapterSections(n){ return SECTIONS.filter(function(s){ return isPrecalc(s.sec) && chapterOf(s.sec) === n; }); }
+    // A subject groups its sections. Precalc chapters share "precalc"; each
+    // generated set (biology, etc.) is its OWN subject — so the section dropdown
+    // never mixes biology in with the precalc sections.
+    function subjectKey(sec){ return isPrecalc(sec) ? "precalc" : sec; }
+    function scopeDeckPick(){
+      var curKey = subjectKey(DECKS[curDeck].id);
+      deckPick.innerHTML = "";
+      SECTIONS.forEach(function(s, i){
+        if (subjectKey(s.sec) !== curKey) return;
+        var o = document.createElement("option"); o.value = i; o.textContent = s.sec; deckPick.appendChild(o);
+      });
+      deckPick.value = secIndex[DECKS[curDeck].id];
+    }
+    // OpenStax Precalculus — the 12 chapters. 1.1–1.7 are the SECTIONS of Ch. 1.
+    var PRECALC_CHAPTERS = [
+      "Functions", "Linear Functions", "Polynomial & Rational Functions",
+      "Exponential & Logarithmic Functions", "Trigonometric Functions", "Periodic Functions",
+      "Trigonometric Identities & Equations", "Further Applications of Trigonometry",
+      "Systems of Equations & Inequalities", "Analytic Geometry",
+      "Sequences, Probability & Counting", "Introduction to Calculus"
+    ];
+    var homeView = null;  // null = subjects | "precalc-chapters" | "precalc-ch-<N>"
+    function buildHome(){
+      if (!homeGrid) return;
+      saveLocHome();   // remember the home level (runs before buildHome's early returns)
+      homeGrid.innerHTML = "";
+      var dismissed = getDismissed(), titleEl = document.querySelector(".home-title");
+      var precalc = SECTIONS.filter(function(s){ return isPrecalc(s.sec); });
+      var others  = SECTIONS.filter(function(s){ return !isPrecalc(s.sec); });
+
+      // Level 3 — the sections inside a chosen chapter.
+      var m = /^precalc-ch-(\d+)$/.exec(homeView || "");
+      if (m){
+        var cn = parseInt(m[1], 10);
+        titleEl.textContent = "📐 Chapter " + cn + " · " + (PRECALC_CHAPTERS[cn - 1] || "");
+        homeGrid.appendChild(makeMiscBox("Back to chapters", "←", function(){ homeView = "precalc-chapters"; buildHome(); }));
+        chapterSections(cn).forEach(function(s){ if (!dismissed[s.sec]) homeGrid.appendChild(makeSectionBox(s)); });
+        return;
+      }
+
+      // Level 2 — the 12 chapters of Precalculus (only built ones are clickable).
+      if (homeView === "precalc-chapters"){
+        titleEl.textContent = "📐 Precalculus · 12 chapters";
+        homeGrid.appendChild(makeMiscBox("Back to subjects", "←", function(){ homeView = null; buildHome(); }));
+        var built = {};
+        precalc.forEach(function(s){ built[chapterOf(s.sec)] = (built[chapterOf(s.sec)] || 0) + 1; });
+        PRECALC_CHAPTERS.forEach(function(name, i){
+          var n = i + 1, count = built[n] || 0;
+          var box = document.createElement("button");
+          box.type = "button";
+          box.className = "homebox" + (count ? "" : " homebox--soon");
+          box.innerHTML =
+            '<div class="hsec">Chapter ' + n + '</div>' +
+            '<div class="htitle">' + name + '</div>' +
+            '<div class="hmeta">' + (count ? count + " section" + (count > 1 ? "s" : "") + " →" : "Coming soon") + '</div>';
+          if (count) box.addEventListener("click", function(){ homeView = "precalc-ch-" + n; buildHome(); });
+          else box.disabled = true;
+          homeGrid.appendChild(box);
+        });
+        return;
+      }
+
+      // Level 1 — subjects.
+      titleEl.textContent = "📚 Study sets";
+      if (precalc.length && !dismissed["__precalc"]){
+        var chs = {}; precalc.forEach(function(s){ chs[chapterOf(s.sec)] = 1; });
+        var readyList = Object.keys(chs).sort(function(a,b){ return a - b; }).join(", ");
+        var pc = document.createElement("button");
+        pc.type = "button"; pc.className = "homebox";
+        pc.innerHTML =
+          '<span class="hx" aria-label="Hide Precalculus">✕</span>' +
+          '<div class="hsec">📐 Precalculus</div>' +
+          '<div class="htitle">OpenStax · ' + PRECALC_CHAPTERS.length + ' chapters</div>' +
+          '<div class="hmeta">Chapter ' + readyList + ' ready →</div>';
+        pc.addEventListener("click", function(e){
+          if (e.target.classList.contains("hx")) { e.stopPropagation(); dismissSection("__precalc"); return; }
+          homeView = "precalc-chapters"; buildHome();
+        });
+        homeGrid.appendChild(pc);
+      }
+      others.forEach(function(s){ if (!dismissed[s.sec]) homeGrid.appendChild(makeSectionBox(s)); });
+      homeGrid.appendChild(makeMiscBox("Generate a new set", "✨", function(){ hideHome(); if (genBar.style.display === "none") genBtn.click(); }));
+      if (Object.keys(dismissed).length){
+        homeGrid.appendChild(makeMiscBox("Restore hidden sets", "↩︎", function(){ setDismissed({}); buildHome(); }));
+      }
+    }
+    function showHomeAt(view){ homeView = view || null; buildHome(); document.body.classList.add("quiz-home"); closeMenu(); }
+    function showHome(){ showHomeAt(null); }
+    function hideHome(){ document.body.classList.remove("quiz-home"); }
+    // On load, reopen wherever the user last was (deck+question or home level) instead of always the home screen.
+    function restoreLoc(){
+      if (bootLoc && bootLoc.view === "deck"){
+        var di = -1; for (var i=0;i<DECKS.length;i++){ if (DECKS[i].id === bootLoc.deckId){ di = i; break; } }
+        if (di >= 0){
+          hideHome(); switchDeck(di);
+          if (typeof bootLoc.idx === "number" && bootLoc.idx >= 0 && bootLoc.idx < DECK.length){ idx = bootLoc.idx; render(); }
+          closeMenu(); return;
+        }
+      }
+      showHomeAt(bootLoc && bootLoc.view === "home" ? bootLoc.homeView : null);
+    }
+    document.getElementById("homeBtn").addEventListener("click", showHome);
+    // Deep link: ?q=1.2.11 opens that section's question directly (used by WordWeaver node links).
+    function gotoDeepLink(){
+      var qp; try { qp = new URLSearchParams(location.search).get("q"); } catch(_){ qp = null; }
+      if (!qp) return false;
+      var m = /^(\d+\.\d+)\.(\d+)$/.exec(qp.trim()); if (!m) return false;
+      var sec = m[1], n = parseInt(m[2],10) - 1, di = -1;
+      for (var i=0;i<DECKS.length;i++){ if (DECKS[i].id===sec && !DECKS[i].generated){ di=i; break; } }
+      if (di<0) for (var j=0;j<DECKS.length;j++){ if (DECKS[j].id===sec){ di=j; break; } }
+      if (di<0) return false;
+      hideHome(); switchDeck(di);
+      if (n>=0 && n<DECK.length){ idx=n; render(); }
+      closeMenu(); return true;
+    }
+    if (!gotoDeepLink()) restoreLoc();
+
+    // Receive generated decks from a host page (Inkling embeds this in an iframe).
+    window.addEventListener("message", function(e){
+      var msg = e && e.data;
+      if (!msg || msg.type !== "inkling-quiz-deck" || !msg.deck) return;
+      var ok = addGeneratedDeck(msg.deck);
+      try { (e.source || window.parent)?.postMessage({ type:"inkling-quiz-deck-ack", ok: ok }, "*"); } catch(_){}
+    });
+    // localStorage handoff: host stashes a deck just before opening the page.
+    try {
+      var stashed = localStorage.getItem("inkling-quiz-incoming-deck");
+      if (stashed) { localStorage.removeItem("inkling-quiz-incoming-deck"); addGeneratedDeck(JSON.parse(stashed)); }
+    } catch(_){}
+    // Direct link: ?deck=<base64-encoded JSON>.
+    try {
+      var dparam = new URLSearchParams(location.search).get("deck");
+      if (dparam) addGeneratedDeck(JSON.parse(decodeURIComponent(escape(atob(dparam)))));
+    } catch(_){}
+    // Tell the host we're ready to receive a deck.
+    try { if (window.parent && window.parent !== window) window.parent.postMessage({ type:"inkling-quiz-ready" }, "*"); } catch(_){}
+
+    // ── ✨ Generate a new set via Inkling AI (Haiku backend) ──────────────────
+    var genBtn=document.getElementById("genBtn"), genBar=document.getElementById("genBar"),
+        genTopic=document.getElementById("genTopic"), genGo=document.getElementById("genGo"), genNote=document.getElementById("genNote");
+    function apiBase(){
+      try { if (window.__EUGENEOUS_API__) return String(window.__EUGENEOUS_API__).replace(/\/$/,""); } catch(_){}
+      return "https://inkling-15yf.onrender.com";
+    }
+    function authToken(){
+      try { var s=JSON.parse(localStorage.getItem("eugeneousxr:session")||"null"); return (s && s.token) || null; } catch(_){ return null; }
+    }
+    function setNote(msg, kind){ genNote.textContent=msg||""; genNote.className="gennote"+(kind?" "+kind:""); }
+    genBtn.addEventListener("click", function(){
+      var open = genBar.style.display==="none";
+      genBar.style.display = open ? "flex" : "none";
+      if (open){ setNote(""); genTopic.focus(); }
+    });
+    genTopic.addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); doGenerate(); } });
+    genGo.addEventListener("click", doGenerate);
+    function doGenerate(){
+      var topic=(genTopic.value||"").trim();
+      if (topic.length<2){ setNote("Type a topic first.", "err"); genTopic.focus(); return; }
+      if (!authToken()){ setNote("Sign in to Inkling first, then reopen this to generate.", "err"); return; }
+      genGo.disabled=true; var orig=genGo.textContent; genGo.textContent="Generating…";
+      setNote("Asking Inkling… the AI can take a few seconds (longer if the server was asleep).");
+      fetch(apiBase()+"/api/inkling/quiz-set", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+authToken(), "X-Inkling-Client":"Inkling" },
+        body: JSON.stringify({ topic: topic })
+      }).then(function(res){ return res.json().catch(function(){ return null; }).then(function(d){ return { ok:res.ok, status:res.status, data:d }; }); })
+        .then(function(r){
+          genGo.disabled=false; genGo.textContent=orig;
+          var data=r.data;
+          if (!r.ok){ setNote("Couldn't generate — "+((data&&data.error)||("server "+r.status)), "err"); return; }
+          var src = data && data.source;
+          if (src==="guest"){ setNote("Sign in to Inkling to use the AI generator.", "err"); return; }
+          if (src==="capped"){ setNote("You've hit today's AI limit — it resets tomorrow.", "err"); return; }
+          if (!data || !Array.isArray(data.questions) || !data.questions.length){ setNote("Couldn't make a set — try a clearer topic.", "err"); return; }
+          var deck = { id:"✨ "+topic, title:topic, topic:topic, questions:data.questions };
+          if (addGeneratedDeck(deck)){
+            setNote((src==="mock"?"(Demo set — live AI fills in once the server is deployed.) ":"")+"Done — showing your new set ↑", "ok");
+            genBar.style.display="none"; genTopic.value="";
+          } else { setNote("Got a response but couldn't build a set from it.", "err"); }
+        })
+        .catch(function(){ genGo.disabled=false; genGo.textContent=orig; setNote("Couldn't reach Inkling — check your connection and try again.", "err"); });
+    }
+
+    // Make an AI set FOR the current precalc section (joins it as the ✨ AI Set,
+    // alongside your 📷 screenshot set). Generated on the section's own topic.
+    function makeSectionAiSet(btn, difficulty){
+      var sec = DECKS[curDeck].id, title = DECKS[curDeck].title;
+      var topic = String(title || sec).replace(/^\s*[^·]*·\s*/, "") || sec;
+      if (!authToken()){ btn.textContent = "Sign in first"; return; }
+      btn.disabled = true; var orig = btn.textContent; btn.textContent = "✨ …";
+      fetch(apiBase()+"/api/inkling/quiz-set", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+authToken(), "X-Inkling-Client":"Inkling" },
+        body: JSON.stringify({ topic: topic, section: sec, difficulty: difficulty || "" })
+      }).then(function(res){ return res.json().catch(function(){ return null; }).then(function(d){ return { ok:res.ok, data:d }; }); })
+        .then(function(r){
+          btn.disabled = false; btn.textContent = orig;
+          var d = r.data;
+          if (!r.ok || !d){ btn.textContent = "retry"; return; }
+          if (d.source === "guest"){ btn.textContent = "sign in"; return; }
+          if (d.source === "capped"){ btn.textContent = "limit"; return; }
+          if (!Array.isArray(d.questions) || !d.questions.length){ btn.textContent = "retry"; return; }
+          addGeneratedDeck({ id: sec, title: title, topic: topic, tier: difficulty || null, questions: d.questions });
+        })
+        .catch(function(){ btn.disabled = false; btn.textContent = orig; });
+    }
+
+    // ── 🤖 Explain / 💡 Hint — AI tutor: progressive hints (nudge → step → full worked solution) ──
+    var explainPanel=document.getElementById("explainPanel"), explainBody=document.getElementById("explainBody"),
+        explainInput=document.getElementById("explainInput"), explainSend=document.getElementById("explainSend"),
+        explainBtn=document.getElementById("explainBtn"), explainClose=document.getElementById("explainClose"),
+        hintBtn=document.getElementById("hintBtn");
+    var explainHistory=[], explainQIdx=null, explainBusy=false, hintLevel=0, fullShown=false, sessionQA=null;
+
+    // Cache full worked solutions so reopening Explain on a question is instant + costs no API call.
+    var EXPLAIN_CACHE_KEY="inkling-quiz-explain-cache";
+    function explainKey(qa){ return (qa.prompt+"||"+qa.answer).toLowerCase().replace(/\s+/g," ").trim().slice(0,300); }
+    function getExplainCache(qa){ try{ var m=JSON.parse(localStorage.getItem(EXPLAIN_CACHE_KEY)||"{}"); return m[explainKey(qa)]||null; }catch(e){ return null; } }
+    function setExplainCache(qa, reply){ try{ var m=JSON.parse(localStorage.getItem(EXPLAIN_CACHE_KEY)||"{}"); var k=explainKey(qa); if(!(k in m)){ var ks=Object.keys(m); while(ks.length>=80){ delete m[ks.shift()]; } } m[k]=reply; localStorage.setItem(EXPLAIN_CACHE_KEY, JSON.stringify(m)); }catch(e){} }
+
+    function exAdd(kind, text){
+      var d=document.createElement("div"); d.className="ex-msg ex-msg--"+kind; d.textContent=text;
+      explainBody.appendChild(d); explainBody.scrollTop=explainBody.scrollHeight; return d;
+    }
+    function currentQA(){
+      var q=DECK[idx]||{};
+      var prompt=String(q.prompt||"").replace(/<[^>]+>/g," ").replace(/&[a-z]+;/gi," ").replace(/\s+/g," ").trim();
+      var ans="";
+      if (q.type==="mc" && Array.isArray(q.options)) ans=String(q.options[q.correct]||"").replace(/<[^>]+>/g,"").trim();
+      else if (Array.isArray(q.blanks)) ans=q.blanks.map(function(b){ return b.answerText!=null?b.answerText:b.answer; }).join("; ");
+      else if (Array.isArray(q.fields)) ans=q.fields.map(function(f){ return f.kind==="select"?(f.choices&&f.choices[f.answer]):(f.answerText!=null?f.answerText:f.answer); }).join("; ");
+      return { prompt:prompt, answer:ans };
+    }
+    function updateHintBtn(){
+      if (!hintBtn) return;
+      if (fullShown){ hintBtn.textContent="💡 Hint"; hintBtn.disabled=true; return; }
+      hintBtn.disabled=false;
+      hintBtn.textContent = hintLevel===0 ? "💡 Hint" : hintLevel===1 ? "💡 Another hint" : "💡 Show solution";
+    }
+    function resetTutorUI(){
+      explainQIdx=null; hintLevel=0; fullShown=false;
+      if (explainPanel) explainPanel.classList.add("hidden");
+      updateHintBtn();
+    }
+    function ensureSession(){
+      if (explainQIdx===idx) return;
+      explainQIdx=idx; explainBody.innerHTML=""; explainHistory=[]; hintLevel=0; fullShown=false; sessionQA=currentQA();
+    }
+    function callExplain(mode, cacheQA){
+      if (explainBusy) return;
+      if (!authToken()){ exAdd("note","Sign in to Inkling to get AI help."); return; }
+      explainBusy=true; explainSend.disabled=true; if(hintBtn) hintBtn.disabled=true;
+      var thinking=exAdd("ai","…");
+      fetch(apiBase()+"/api/inkling/explain",{ method:"POST",
+        headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+authToken() },
+        body: JSON.stringify({ history: explainHistory, mode: mode||"" }) })
+        .then(function(r){ return r.json().catch(function(){return null;}).then(function(d){ return {ok:r.ok,data:d}; }); })
+        .then(function(r){
+          thinking.remove();
+          var d=r.data;
+          if (!r.ok || !d){ exAdd("note","Couldn't reach Inkling — try again."); return; }
+          if (d.source==="guest"){ exAdd("note","Sign in to Inkling for AI help."); return; }
+          if (d.source==="capped"){ exAdd("note","You've hit today's AI limit — resets tomorrow."); return; }
+          var reply=String(d.reply||"").trim() || "Hmm — I couldn't work that one out.";
+          exAdd("ai", reply); explainHistory.push({ role:"assistant", content:reply });
+          if (cacheQA) setExplainCache(cacheQA, reply);
+        })
+        .catch(function(){ thinking.remove(); exAdd("note","Couldn't reach Inkling — check your connection."); })
+        .then(function(){ explainBusy=false; explainSend.disabled=false; updateHintBtn(); });
+    }
+    function showFull(){
+      if (fullShown || explainBusy) return;
+      fullShown=true;
+      var qa=sessionQA, firstTurn=explainHistory.length===0;
+      if (firstTurn){
+        explainHistory.push({ role:"user", content:"Question: "+qa.prompt+(qa.answer?"\nThe correct answer is: "+qa.answer:"")+"\n\nWalk me through how to solve it." });
+        var cached=getExplainCache(qa);
+        if (cached){ exAdd("ai", cached); explainHistory.push({ role:"assistant", content:cached }); updateHintBtn(); return; }
+        callExplain("", qa);   // clean full solution → cache it
+      } else {
+        explainHistory.push({ role:"user", content:"Now give me the full worked solution, step by step." });
+        callExplain("");       // came after hints → don't cache (it may reference them)
+      }
+    }
+    function openExplain(){
+      ensureSession();
+      explainPanel.classList.remove("hidden");
+      showFull();
+      explainInput.focus();
+    }
+    function requestHint(){
+      ensureSession();
+      explainPanel.classList.remove("hidden");
+      if (fullShown || explainBusy){ explainInput.focus(); return; }
+      var qa=sessionQA;
+      if (hintLevel===0){
+        hintLevel=1;
+        explainHistory.push({ role:"user", content:"Question: "+qa.prompt+(qa.answer?"\n(The answer is "+qa.answer+" — do NOT reveal it.)":"")+"\n\nGive me a small hint to get started." });
+        callExplain("nudge");
+      } else if (hintLevel===1){
+        hintLevel=2;
+        explainHistory.push({ role:"user", content:"Give me the first concrete step, then stop." });
+        callExplain("step");
+      } else {
+        showFull();
+      }
+    }
+    function sendFollowup(){
+      var t=(explainInput.value||"").trim(); if(!t || explainBusy) return;
+      ensureSession();
+      exAdd("me", t); explainHistory.push({ role:"user", content:t }); explainInput.value=""; callExplain("");
+    }
+    explainBtn.addEventListener("click", openExplain);
+    if (hintBtn) hintBtn.addEventListener("click", requestHint);
+    explainClose.addEventListener("click", function(){ explainPanel.classList.add("hidden"); });
+    explainSend.addEventListener("click", sendFollowup);
+    explainInput.addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); sendFollowup(); } });
+
+    // AI second opinion on a missed WORD answer (synonyms / phrasing). Flips to ✓ if the LLM accepts it.
+    function llmRegrade(q, pending){
+      if (!authToken()) return;
+      var atDeck=curDeck, atIdx=idx, total=q.blanks.length;
+      var promptText=String(q.prompt||"").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();
+      pending.forEach(function(p){
+        var inp=p.inp, mk=inp.nextElementSibling, expected=q.blanks[p.bi].answer, given=aval(inp);
+        fetch(apiBase()+"/api/inkling/grade",{ method:"POST",
+          headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+authToken() },
+          body: JSON.stringify({ question:promptText, expected:expected, given:given }) })
+          .then(function(r){ return r.json(); })
+          .then(function(d){
+            if (curDeck!==atDeck || idx!==atIdx) return;     // user moved on — don't touch
+            if (d && d.correct){
+              inp.classList.remove("bad"); inp.classList.add("ok");
+              if (mk && mk.classList.contains("mark")) mk.textContent="✓";
+              var ok=optsEl.querySelectorAll(".ansin.ok").length;
+              finishGrade(Math.round(ok/total*q.points), q.points);
+            }
+          }).catch(function(){});
+      });
+    }
+  })();
+  </script>
+</body>
+</html>

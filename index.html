@@ -73,6 +73,12 @@
   <link rel="stylesheet" href="style-enhancements-layers.css" />
   <link rel="stylesheet" href="style-enhancements-shell.css" />
   <link rel="stylesheet" href="style-appearance-palettes.css" />
+  <style>
+    /* Alerts live on the Inkling orb (its red count badge) + the Alerts nav tab.
+       Hide the redundant standalone alerts bells: the top-chrome 🔔 and the
+       floating notification bell beside the orb. (2026-06-18) */
+    #btn-top-alerts, #notification-bell-anchor { display: none !important; }
+  </style>
 </head>
 <body>
   <div id="app">
@@ -540,9 +546,12 @@
       <span class="inkling-bottom-nav__icon" aria-hidden="true">🔔</span>
       <span class="inkling-bottom-nav__label">Alerts</span>
     </button>
-    <button type="button" class="inkling-bottom-nav__btn" data-tab="alarm" aria-pressed="false">
-      <span class="inkling-bottom-nav__icon" aria-hidden="true">⏰</span>
-      <span class="inkling-bottom-nav__label">Alarm</span>
+    <!-- Alarm removed from the bottom nav 2026-06-18 (set alarms from the Schedule
+         day panel). Study brought down here, in the alarm's old spot; Mind & Study
+         still live in the Inkling orb too. -->
+    <button type="button" class="inkling-bottom-nav__btn" data-tab="study" aria-pressed="false">
+      <span class="inkling-bottom-nav__icon" aria-hidden="true">📚</span>
+      <span class="inkling-bottom-nav__label">Study</span>
     </button>
     <button type="button" class="inkling-bottom-nav__btn" data-tab="mind" aria-pressed="false">
       <span class="inkling-bottom-nav__icon" aria-hidden="true">🧠</span>

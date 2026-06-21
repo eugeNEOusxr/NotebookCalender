@@ -18,9 +18,16 @@ const CORE_ASSETS = [
 ];
 
 self.addEventListener("install", (event) => {
-  // Do NOT skipWaiting here: a new worker installs and WAITS so the app can show
-  // an "Update available" banner. The page triggers activation via SKIP_WAITING.
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS)));
+  // Auto-activate the new worker so a changed deploy can NEVER leave a client stuck
+  // on a stale cache (more robust than waiting for an in-app "Update" tap, which a
+  // blank/frozen screen can't show). Best-effort precache: a single asset that 404s
+  // mid-propagation must NOT fail the whole install (cache.addAll is atomic — fatal).
+  self.skipWaiting();
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) =>
+      Promise.allSettled(CORE_ASSETS.map((u) => cache.add(u)))
+    )
+  );
 });
 
 // The page posts this when the user taps "Update" (or to auto-apply on first

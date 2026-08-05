@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Weaver — Study &amp; Practice</title>
+<meta name="theme-color" content="#05070e" />
+<link rel="manifest" href="/weaver-manifest.json" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧵</text></svg>" />
+<style>
+  :root{ --bg:#05070e; --ink:#e6edf3; --dim:#8b949e; --line:rgba(255,255,255,.12); --panel:rgba(14,19,32,.7);
+    --violet:#a78bfa; --green:#39d98a; --blue:#9ecbff; --amber:#fbbf24; --cyan:#22d3ee; }
+  *{ box-sizing:border-box; }
+  /* Weaver's galaxy — warm amber & magenta nebula (its signature look). */
+  html,body{ margin:0; min-height:100%; background:
+    radial-gradient(900px 520px at 18% -6%, rgba(251,191,36,.16), transparent 55%),
+    radial-gradient(820px 620px at 92% 8%, rgba(217,70,160,.14), transparent 60%),
+    radial-gradient(700px 700px at 60% 108%, rgba(120,90,200,.12), transparent 60%),
+    var(--bg);
+    color:var(--ink); font:600 15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .wrap{ max-width:860px; margin:0 auto; padding:34px 18px 60px; }
+  header{ text-align:center; margin:14px 0 30px; }
+  .logo{ font:800 34px/1.1 Georgia,serif; }
+  .logo .t{ font-size:38px; }
+  .tag{ color:var(--dim); font:600 14px system-ui; margin-top:6px; }
+  .grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px; }
+  a.card{ display:flex; flex-direction:column; gap:8px; text-decoration:none; color:inherit;
+    background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:16px 16px 18px;
+    transition:border-color .15s, transform .15s; }
+  a.card:hover{ border-color:rgba(167,139,250,.55); transform:translateY(-2px); }
+  .emoji{ font-size:26px; line-height:1; }
+  .ct{ font:800 16px system-ui; }
+  .cd{ color:var(--dim); font:500 13px/1.5 system-ui; }
+  .accent{ height:3px; border-radius:3px; width:38px; margin-top:2px; }
+  .sec{ margin:28px 0 10px; font:800 12px system-ui; letter-spacing:.12em; text-transform:uppercase; color:var(--dim); }
+  .switch{ display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:34px; }
+  .switch a{ text-decoration:none; color:var(--dim); border:1px solid var(--line); border-radius:999px;
+    padding:7px 14px; font:800 12px system-ui; }
+  .switch a:hover{ color:var(--ink); border-color:rgba(167,139,250,.5); }
+  .foot{ text-align:center; color:var(--dim); font:600 12px system-ui; margin-top:20px; }
+  /* Shared Inkling orb — the same assistant across Orbit / Inkling / Weaver. */
+  .orb{ position:fixed; right:18px; bottom:18px; z-index:60; width:56px; height:56px; border-radius:50%; border:0; cursor:pointer;
+    background:radial-gradient(circle at 35% 30%, #a78bfa, #6d28d9); color:#fff; font-size:24px;
+    box-shadow:0 8px 26px rgba(109,40,217,.5); transition:transform .15s; }
+  .orb:hover{ transform:scale(1.06); }
+  .orb-panel{ position:fixed; right:18px; bottom:84px; z-index:60; width:min(360px,92vw); height:min(60vh,520px);
+    background:rgba(10,14,24,.97); border:1px solid var(--line); border-radius:16px; display:flex; flex-direction:column;
+    overflow:hidden; box-shadow:0 16px 50px rgba(0,0,0,.5); }
+  .orb-panel[hidden]{ display:none; }
+  .orb-head{ display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border-bottom:1px solid var(--line); font:800 14px system-ui; color:var(--violet); }
+  .orb-head button{ background:none; border:0; color:var(--dim); cursor:pointer; font-size:15px; }
+  .orb-thread{ flex:1; overflow:auto; padding:12px; display:flex; flex-direction:column; gap:9px; }
+  .orb-hi{ color:var(--dim); font:500 13px/1.6 system-ui; }
+  .orb-msg{ max-width:88%; padding:9px 12px; font:500 13.5px/1.5 system-ui; }
+  .orb-user{ align-self:flex-end; background:rgba(88,166,255,.16); border:1px solid rgba(88,166,255,.35); color:#eaf2ff; border-radius:13px 13px 4px 13px; }
+  .orb-inkling{ align-self:flex-start; background:rgba(255,255,255,.05); border:1px solid var(--line); color:#e6edf3; border-radius:13px 13px 13px 4px; }
+  .orb-actions{ display:flex; gap:6px; flex-wrap:wrap; padding:9px 10px 0; }
+  .orb-chip{ background:rgba(167,139,250,.14); border:1px solid rgba(167,139,250,.4); color:#ddd6fe; border-radius:999px; padding:5px 10px; font:800 11px system-ui; cursor:pointer; }
+  .orb-chip:hover{ background:rgba(167,139,250,.26); }
+  .orb-input{ display:flex; gap:7px; padding:10px; border-top:1px solid var(--line); }
+  .orb-input input{ flex:1; background:rgba(255,255,255,.05); border:1px solid var(--line); color:var(--ink); border-radius:9px; padding:9px 11px; font:600 13px system-ui; }
+  .orb-input button{ background:linear-gradient(135deg,#2563eb,#7c3aed); border:0; color:#fff; border-radius:9px; width:40px; font-size:18px; cursor:pointer; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="logo"><span class="t">🧵</span> Weaver</div>
+      <div class="tag">Weave subjects into mastery — quizzes, flashcards, and living study maps.</div>
+    </header>
+
+    <div class="sec">Practice</div>
+    <div class="grid">
+      <a class="card" href="/quiz.html">
+        <div class="emoji">📝</div>
+        <div class="ct">Quizzes &amp; Flashcards</div>
+        <div class="cd">Graded, Canvas-style quizzes across Precalculus, Psychology, Circuits, Electrician, AI, and Biology — with hints, math input, and explanations.</div>
+        <div class="accent" style="background:var(--green)"></div>
+      </a>
+      <a class="card" href="/quiz.html">
+        <div class="emoji">🗺️</div>
+        <div class="ct">Study Maps</div>
+        <div class="cd">Structured paths — Electrician Apprenticeship, Electrical Engineering, Psychology — that light up as you learn and drop you into the right deck.</div>
+        <div class="accent" style="background:var(--amber)"></div>
+      </a>
+    </div>
+
+    <div class="sec">Explore</div>
+    <div class="grid">
+      <a class="card" href="/wordweaver.html">
+        <div class="emoji">🕸️</div>
+        <div class="ct">Knowledge Canvas</div>
+        <div class="cd">See a subject as a living map — a spiral of concepts, sections, and subsections you can wander and deep-link into.</div>
+        <div class="accent" style="background:var(--blue)"></div>
+      </a>
+      <a class="card" href="/wordweaver3d.html">
+        <div class="emoji">🏙️</div>
+        <div class="ct">Knowledge Towers (3D)</div>
+        <div class="cd">Fly through a subject built as 3D towers — chapters as floors, concepts as steps you can climb.</div>
+        <div class="accent" style="background:var(--cyan)"></div>
+      </a>
+    </div>
+
+    <div class="switch">
+      <a href="/inkling.html">🌱 Inkling</a>
+      <a href="/">🛰️ Orbit</a>
+    </div>
+    <div class="foot">Weaver — part of your suite. One account, three apps.</div>
+  </div>
+
+  <!-- Shared Inkling orb (same widget goes on Orbit + Inkling too) -->
+  <button id="orb" class="orb" aria-label="Ask Inkling">✦</button>
+  <div id="orbPanel" class="orb-panel" hidden>
+    <div class="orb-head"><span>✦ Inkling</span><button id="orbClose" aria-label="Close">✕</button></div>
+    <div id="orbThread" class="orb-thread"></div>
+    <div class="orb-actions" id="orbActions"></div>
+    <div class="orb-input"><input id="orbInput" placeholder="Ask Inkling anything…" /><button id="orbSend" aria-label="Send">›</button></div>
+  </div>
+  <script>
+  (function(){
+    var API=(window.__EUGENEOUS_API__)||"https://inkling-15yf.onrender.com";
+    var CHAT_KEY="inkling-orb-v1", APP="Weaver (study & practice)";
+    var FRAME="You are Inkling — the user's mentor across their whole suite (Orbit: calendar & schedule; Inkling: knowledge, story & graph; Weaver: study & practice). Warm, curious, concise; connect ideas and lead with a question when apt; never fabricate. The user is currently in "+APP+".";
+    function token(){ try{ var s=JSON.parse(localStorage.getItem("eugeneousxr:session")||"null"); return s&&s.token?s.token:null; }catch(e){ return null; } }
+    function load(){ try{ return JSON.parse(localStorage.getItem(CHAT_KEY)||"[]"); }catch(e){ return []; } }
+    function save(m){ try{ localStorage.setItem(CHAT_KEY, JSON.stringify(m.slice(-40))); }catch(e){} }
+    function esc(s){ return String(s==null?"":s).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];}); }
+    function md(s){ return esc(s).replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\n/g,"<br>"); }
+    // App-specific quick actions — the minimal set Weaver needs.
+    var ACTIONS=[
+      {i:"📝",t:"Quiz me",m:"Quiz me — pick a topic I've been studying, ask me one question, then check my answer."},
+      {i:"💡",t:"Explain",m:"Explain a concept I'm learning as simply as you can. Ask me which one first."},
+      {i:"🎯",t:"What next",m:"Based on what I've been studying, what should I focus on next, and why?"}
+    ];
+    var msgs=load();
+    function render(){ var t=document.getElementById("orbThread");
+      t.innerHTML = msgs.length ? msgs.map(function(m){ return '<div class="orb-msg orb-'+(m.role==="user"?"user":"inkling")+'">'+(m.role==="user"?esc(m.text):md(m.text))+'</div>'; }).join("")
+        : '<div class="orb-hi">Hi — I\'m Inkling. Ask me anything; I\'m the same assistant across Orbit, Inkling and Weaver, and I remember our chat everywhere.</div>';
+      t.scrollTop=t.scrollHeight; }
+    async function send(preset){
+      var inp=document.getElementById("orbInput"); var q=preset||(inp.value||"").trim(); if(!q) return; if(!preset) inp.value="";
+      msgs.push({role:"user",text:q}); save(msgs); render();
+      var tk=token();
+      if(!tk){ msgs.push({role:"inkling",text:"Sign in on the main app (and set an API key on Render) and I can answer with the full model — I'll be the same Inkling across all three apps."}); save(msgs); render(); return; }
+      msgs.push({role:"inkling",text:"…"}); render();
+      var reply=null;
+      try{
+        var hist=msgs.filter(function(m){return m.text!=="…";}).slice(-12).map(function(m){return {role:m.role==="user"?"user":"assistant",content:m.text};});
+        var res=await fetch(API+"/api/inkling/chat",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+tk},
+          body:JSON.stringify({message:q, history:hist, mindSummary:FRAME, referenceDate:new Date().toISOString().slice(0,10)})});
+        if(res.ok){ var d=await res.json(); if(d&&d.source==="llm"&&d.reply) reply=d.reply; }
+      }catch(e){}
+      msgs.pop();
+      msgs.push({role:"inkling",text: reply||"I couldn't reach the AI just now — check you're signed in and the API key is set on Render."});
+      save(msgs); render();
+    }
+    document.getElementById("orb").onclick=function(){ var p=document.getElementById("orbPanel"); p.hidden=!p.hidden; if(!p.hidden){ render(); document.getElementById("orbInput").focus(); } };
+    document.getElementById("orbClose").onclick=function(){ document.getElementById("orbPanel").hidden=true; };
+    document.getElementById("orbSend").onclick=send;
+    document.getElementById("orbInput").addEventListener("keydown",function(e){ if(e.key==="Enter") send(); });
+    (function(){ var el=document.getElementById("orbActions");
+      el.innerHTML=ACTIONS.map(function(a,i){ return '<button class="orb-chip" data-i="'+i+'">'+a.i+' '+a.t+'</button>'; }).join("");
+      el.querySelectorAll(".orb-chip").forEach(function(b){ b.onclick=function(){ send(ACTIONS[+b.getAttribute("data-i")].m); }; }); })();
+  })();
+  </script>
+  <!-- Visitor analytics (GoatCounter — privacy-friendly, no cookies). Owner self-exclude: ?noviews once per device (?countme to undo). Data: eugeneousxr.goatcounter.com -->
+  <script>
+    (function () {
+      try {
+        var p = new URLSearchParams(location.search);
+        if (p.has("noviews")) localStorage.setItem("skipgc", "t");
+        if (p.has("countme")) localStorage.removeItem("skipgc");
+        if (localStorage.getItem("skipgc") === "t") return;
+      } catch (e) { /* ignore */ }
+      var s = document.createElement("script");
+      s.async = true;
+      s.src = "//gc.zgo.at/count.js";
+      s.setAttribute("data-goatcounter", "https://eugeneousxr.goatcounter.com/count");
+      document.head.appendChild(s);
+    })();
+  </script>
+</body>
+</html>

@@ -14,8 +14,10 @@
   html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
     font:600 14px/1.5 system-ui,-apple-system,sans-serif;
     -webkit-font-smoothing:antialiased}
-  body{background:radial-gradient(1200px 700px at 80% -10%,rgba(120,90,255,.13),transparent 60%),
-        radial-gradient(900px 600px at 0% 110%,rgba(0,180,255,.10),transparent 55%),var(--bg)}
+  /* Inkling's galaxy — green & violet nebula (its signature look). */
+  body{background:radial-gradient(1050px 640px at 82% -10%,rgba(57,217,138,.13),transparent 58%),
+        radial-gradient(900px 620px at 6% 108%,rgba(120,90,255,.15),transparent 58%),
+        radial-gradient(700px 700px at 50% 40%,rgba(45,120,90,.06),transparent 60%),var(--bg)}
   a{color:inherit}
   .wrap{max-width:760px;margin:0 auto;padding:22px 16px 90px}
   .top{display:flex;align-items:center;gap:10px;justify-content:space-between;margin-bottom:18px}
@@ -338,7 +340,128 @@ DB.profile = DB.profile || { answers:{}, fields:[], done:false, startedAt:0, com
 DB.captures = DB.captures || [];  // interpreter output: [{id,text,type,links,reason,at}]
 DB.chat = DB.chat || [];          // conversation transcript: [{role,text|html,route,links,actions,at}]
 DB.conversations = DB.conversations || []; // imported AI chats: [{id,title,provider,summary,concepts,relations,quiz,messageCount,at}]
+DB.proposals = DB.proposals || [];   // NEXARIS Approval Gate inbox: AI changes waiting for your OK (never applied until approved)
+DB.revisions = DB.revisions || [];   // append-only history — every applied change keeps the value it replaced (nothing is ever lost)
 function persist(){ save(DB); }
+
+/* ============================================================
+   NEXARIS P0 — THE APPROVAL GATE  (human final authority)
+   AI passes no longer write straight into your graph. They PROPOSE.
+   Each proposal carries an "explain" block (why / confidence / risks)
+   and a list of before→after changes. Nothing changes until YOU approve.
+   Every applied change is logged to DB.revisions with the old value,
+   so history is never overwritten and every decision is reversible (Undo).
+   ============================================================ */
+const GATE_KINDS = { summary:{icon:"✨",agent:"Summarizer",label:"Summaries & tags"},
+  extract:{icon:"🔮",agent:"Extractor",label:"Extracted knowledge"},
+  edge:{icon:"🔗",agent:"Relationship Labeler",label:"Relationship labels"} };
+function newId(p){ return (p||"id")+"_"+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+const Gate = {
+  propose(p){ p.id=newId("prop"); p.ts=Date.now(); p.status="pending";
+    p.changes=(p.changes||[]).filter(ch=>Gate._diff(ch)); if(!p.changes.length) return null;
+    DB.proposals.unshift(p); persist(); return p.id; },
+  pending(kind){ return (DB.proposals||[]).filter(p=>p.status==="pending"&&(!kind||p.kind===kind)); },
+  applied(){ return (DB.proposals||[]).filter(p=>p.status==="applied"); },
+  find(id){ return (DB.proposals||[]).find(p=>p.id===id); },
+  // is a change actually a change? (skip no-ops)
+  _diff(ch){ const f=ch.fields||{}; return Object.keys(f).some(k=>JSON.stringify(f[k].from)!==JSON.stringify(f[k].to)); },
+  _target(ch){ if(ch.target.type==="conversation") return (DB.conversations||[]).find(c=>String(c.id)===String(ch.target.id));
+    if(ch.target.type==="edgeLabel"){ DB.edgeLabels=DB.edgeLabels||{}; return DB.edgeLabels; } return null; },
+  _read(ch,field){ const t=Gate._target(ch); if(!t) return undefined;
+    return ch.target.type==="edgeLabel" ? t[ch.target.key] : t[field]; },
+  _write(ch,field,val){ const t=Gate._target(ch); if(!t) return;
+    if(ch.target.type==="edgeLabel") t[ch.target.key]=val; else t[field]=val; },
+  approve(id){ const p=Gate.find(id); if(!p||p.status!=="pending") return;
+    p.revIds=[];
+    (p.changes||[]).forEach(ch=>{ const f=ch.fields||{}; Object.keys(f).forEach(field=>{
+      const from=Gate._read(ch,field); const to=f[field].to;
+      if(JSON.stringify(from)===JSON.stringify(to)) return;
+      Gate._write(ch,field,to);
+      const rid=newId("rev"); p.revIds.push(rid);
+      DB.revisions.push({ id:rid, ts:Date.now(), proposalId:p.id, agent:p.agent, kind:p.kind,
+        target:ch.target, label:ch.target.label, field, from, to }); }); });
+    // mark source conversations processed so the pass won't re-offer them
+    (p.changes||[]).forEach(ch=>{ if(ch.target.type==="conversation"){ const c=(DB.conversations||[]).find(x=>String(x.id)===String(ch.target.id));
+      if(c){ if(p.kind==="summary") c.aiSum=true; if(p.kind==="extract") c.aiExtracted=true; } } });
+    p.status="applied"; p.decidedAt=Date.now(); persist(); },
+  reject(id){ const p=Gate.find(id); if(!p||p.status!=="pending") return;
+    p.status="rejected"; p.decidedAt=Date.now(); persist(); },
+  undo(id){ const p=Gate.find(id); if(!p||p.status!=="applied") return;
+    // restore each change's previous value, logged as its own reversal (history preserved)
+    (p.revIds||[]).map(rid=>DB.revisions.find(r=>r.id===rid)).filter(Boolean).reverse().forEach(r=>{
+      const ch={ target:r.target }; const cur=Gate._read(ch,r.field);
+      Gate._write(ch,r.field,r.from);
+      DB.revisions.push({ id:newId("rev"), ts:Date.now(), proposalId:p.id, agent:"You (Undo)",
+        kind:p.kind, target:r.target, label:r.label, field:r.field, from:cur, to:r.from }); });
+    (p.changes||[]).forEach(ch=>{ if(ch.target.type==="conversation"){ const c=(DB.conversations||[]).find(x=>String(x.id)===String(ch.target.id));
+      if(c){ if(p.kind==="summary") c.aiSum=false; if(p.kind==="extract") c.aiExtracted=false; } } });
+    p.status="undone"; p.undoneAt=Date.now(); persist(); },
+  // conversation ids already sitting in a pending proposal of this kind (don't double-offer)
+  pendingConvIds(kind){ const s=new Set(); Gate.pending(kind).forEach(p=>(p.changes||[]).forEach(ch=>{
+    if(ch.target.type==="conversation") s.add(String(ch.target.id)); })); return s; }
+};
+/* ---- Approval Gate UI (the ✅ Review tab) ---- */
+function changeRow(ch){
+  const f=ch.fields||{}; let rows="";
+  if(f.summary){ rows+=`<div style="margin-top:5px"><span style="color:var(--dim);text-decoration:line-through">${esc(f.summary.from||"(empty)")}</span><br><span style="color:#39d98a">${esc(f.summary.to)}</span></div>`; }
+  if(f.concepts){ const a=(f.concepts.from||[]).join(", ")||"(none)", b=(f.concepts.to||[]).join(", ");
+    rows+=`<div style="margin-top:5px;font-size:12px"><span style="color:var(--dim);text-decoration:line-through">${esc(a)}</span> → <span style="color:#22d3ee">${esc(b)}</span></div>`; }
+  if(f.extract){ rows+=`<div style="margin-top:5px;font-size:12px;color:#39d98a">${esc(JSON.stringify(f.extract.to))}</div>`; }
+  return `<div style="border-top:1px solid var(--line);padding:9px 0;font:500 13px/1.45 system-ui">
+    <div style="font:700 12px system-ui;color:var(--ink)">${esc(ch.target.label||ch.target.key||"")}</div>${rows}</div>`;
+}
+function proposalCard(p){
+  const k=GATE_KINDS[p.kind]||{icon:"•",agent:p.agent}, ex=p.explain||{};
+  return `<div class="card" style="margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">
+      <div style="font:800 14px system-ui">${k.icon} ${esc(p.title||k.label||"Proposal")}</div>
+      <div style="color:var(--dim);font:600 11px system-ui;white-space:nowrap">${esc(k.agent||"")} · ${daysAgo(p.ts)}</div>
+    </div>
+    <div style="background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:10px 0">
+      <div style="font:700 12px system-ui;color:var(--blue)">Why Inkling proposes this</div>
+      <div style="font:500 13px/1.5 system-ui;margin-top:3px">${esc(ex.why||"")}</div>
+      ${ex.confidence!=null?`<div style="margin-top:8px;font:600 11px system-ui;color:var(--dim)">Confidence ${Math.round(ex.confidence*100)}%${ex.evidence&&ex.evidence.length?" · "+esc(ex.evidence.join(", ")):""}</div>`:""}
+      ${ex.alternatives&&ex.alternatives.length?`<div style="margin-top:4px;font:500 11px system-ui;color:var(--dim)">Considered: ${esc(ex.alternatives.join(" · "))}</div>`:""}
+      ${ex.risks&&ex.risks.length?`<div style="margin-top:6px;font:500 11.5px/1.45 system-ui;color:#ffd166">⚠ ${esc(ex.risks.join(" "))}</div>`:""}
+    </div>
+    <div style="font:700 12px system-ui;color:var(--dim);margin:2px 0 2px">${(p.changes||[]).length} change${(p.changes||[]).length===1?"":"s"} — before → after</div>
+    <div style="max-height:340px;overflow:auto">${(p.changes||[]).map(changeRow).join("")}</div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn" style="flex:1;font:800 13px system-ui" onclick="Gate.approve('${p.id}');renderApprovals()">✓ Approve all</button>
+      <button class="btn ghost" style="flex:1;font:800 13px system-ui" onclick="Gate.reject('${p.id}');renderApprovals()">✕ Reject</button>
+    </div>
+  </div>`;
+}
+function appliedCard(p){
+  const k=GATE_KINDS[p.kind]||{icon:"•"}, n=(p.revIds||[]).length;
+  return `<div class="card" style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:8px;opacity:.9">
+    <div><div style="font:700 13px system-ui">${k.icon} ${esc(p.title||"")}</div>
+      <div style="color:var(--dim);font:600 11px system-ui">Applied ${daysAgo(p.decidedAt||p.ts)} · ${n} value${n===1?"":"s"} changed · originals kept</div></div>
+    <button class="btn ghost" style="font:800 12px system-ui;white-space:nowrap" onclick="Gate.undo('${p.id}');renderApprovals()">↩ Undo</button>
+  </div>`;
+}
+function renderApprovals(){
+  const pend=Gate.pending(), done=Gate.applied().slice(0,8);
+  let body="";
+  if(!pend.length && !done.length){
+    body=`<div class="card" style="text-align:center;padding:26px 18px">
+      <div style="font-size:30px">✅</div>
+      <div style="font:800 16px system-ui;margin-top:6px">Nothing waiting for review</div>
+      <p class="sub" style="max-width:470px;margin:8px auto 0">When Inkling improves your summaries, extracts knowledge, or labels relationships, the changes land here first. Nothing touches your graph until you approve it — and every approved change can be undone.</p>
+      <div style="margin-top:14px"><button class="btn ghost" onclick="go({name:'imports'})">Go to Imports →</button></div>
+    </div>`;
+  } else {
+    if(pend.length){ body+=`<div style="font:800 13px system-ui;color:var(--dim);margin:2px 0 8px">⏳ Waiting for you (${pend.length})</div>`+pend.map(proposalCard).join(""); }
+    if(done.length){ body+=`<div style="font:800 13px system-ui;color:var(--dim);margin:18px 0 8px">🕓 Recently applied — reversible</div>`+done.map(appliedCard).join(""); }
+  }
+  app.innerHTML=chrome(`<div style="max-width:760px;margin:0 auto">
+      <div class="card" style="background:linear-gradient(135deg,rgba(240,171,252,.10),transparent);border-color:rgba(240,171,252,.3)">
+        <div style="font:800 15px system-ui">🛡️ Approval Gate</div>
+        <p class="sub" style="margin:6px 0 0">Inkling proposes; <b style="color:var(--ink)">you decide</b>. AI changes wait here with their reasoning before they ever touch your knowledge graph. History is never overwritten — every approved change can be undone.</p>
+      </div>
+      ${body}
+    </div>`, "approvals");
+}
 
 /* ---- helpers ---- */
 const CONF = ["Just guessing","A rough idea","Fairly confident","I understand it","I could teach it"];
@@ -368,7 +491,9 @@ function chrome(inner, active){
         <button class="${active==='imports'?'on':''}" onclick="go({name:'imports'})">📥 Imports</button>
         <button class="${active==='galaxy'?'on':''}" onclick="go({name:'galaxy'})">🌌 Galaxy</button>
         <button class="${active==='storybook'?'on':''}" onclick="go({name:'storybook'})">📖 Story</button>
-        <button onclick="location.href='/city/'">🏙️ City</button>
+        <button class="${active==='graph'?'on':''}" onclick="go({name:'graph'})">🕸️ Graph</button>
+        <button onclick="location.href='/city/'">🗺️ Atlas</button>
+        <button class="${active==='approvals'?'on':''}" onclick="go({name:'approvals'})" title="Review AI changes before they touch your graph">✅ Review${(function(){const n=Gate.pending().length;return n?` <span style="background:#f0abfc;color:#1a1030;border-radius:999px;padding:0 6px;font:800 11px system-ui">${n}</span>`:"";})()}</button>
       </div>
     </div>${inner}`;
 }
@@ -389,6 +514,254 @@ function render(){
   if(view.name==="imports") return renderImports();
   if(view.name==="galaxy") return renderGalaxy();
   if(view.name==="storybook") return renderStorybook();
+  if(view.name==="graph") return renderGraph();
+  if(view.name==="approvals") return renderApprovals();
+  if(view.name==="conv") return renderConvDetail(view.convId);
+}
+
+/* ============================================================
+   THE KNOWLEDGE GRAPH (🕸️) — concepts as living nodes.
+   A force-directed map of your ideas: top concepts repel and cluster,
+   linked by how often they co-occur, sized by importance. Click a node
+   to open the conversations where the idea lives, and jump to its chapter.
+   (v1: concept graph. Roadmap: timeline slider, realization/question/
+   project/person node types, labeled relationships, memory trails.)
+   ============================================================ */
+const KG_CATCOLOR={consciousness:"#a78bfa",mind:"#c084fc",spiritual:"#f0abfc",growth:"#39d98a",philosophy:"#9ecbff",inkling:"#39d98a",worldweaver:"#f0abfc",ee:"#fbbf24",code:"#39d98a",chain:"#fbbf24",ai:"#a78bfa",creative:"#f0abfc",business:"#ffd166",future:"#7dd3fc",science:"#22d3ee",other:"#9ecbff",
+  project:"#ff8a5b",person:"#f0abfc",tech:"#22d3ee",realization:"#ffd166",question:"#9ecbff"};
+function buildConceptGraph(){
+  const convs=(DB.conversations||[]);
+  const freq={}, coocc={}, byConcept={};
+  convs.forEach(c=>{ const cs=[...new Set(canonConcepts(c))];
+    cs.forEach(x=>{ freq[x]=(freq[x]||0)+1; (byConcept[x]=byConcept[x]||[]).push(c); });
+    for(let i=0;i<cs.length;i++)for(let j=i+1;j<cs.length;j++){ const k=cs[i]<cs[j]?cs[i]+""+cs[j]:cs[j]+""+cs[i]; coocc[k]=(coocc[k]||0)+1; } });
+  const top=Object.keys(freq).filter(x=>freq[x]>=2).sort((a,b)=>freq[b]-freq[a]).slice(0,60);
+  const set=new Set(top), fmax=Math.max(1,...top.map(x=>freq[x]));
+  const nodes=top.map(x=>({ id:x, label:titleCase(x), w:freq[x], r:6+16*Math.sqrt(freq[x]/fmax),
+    cat:libCatOf({anchor:x,threads:[],convs:byConcept[x]||[]}),
+    firstAt:Math.min(...(byConcept[x]||[]).map(c=>c.at||Infinity)), type:"concept" }));
+  const TYPES=[ {type:"project",field:"projects",emoji:"🔨",cap:15}, {type:"person",field:"people",emoji:"👤",cap:12},
+    {type:"tech",field:"technologies",emoji:"🛠",cap:12}, {type:"realization",field:"realizations",emoji:"💡",cap:15},
+    {type:"question",field:"questions",emoji:"❓",cap:12} ];
+  TYPES.forEach(T=>{ const byLower={};
+    convs.forEach(c=>{ const arr=(c.extract&&c.extract[T.field])||[]; const seen=new Set();
+      arr.forEach(x=>{ const k=String(x).trim(); if(!k)return; const lk=k.toLowerCase(); if(seen.has(lk))return; seen.add(lk);
+        byLower[lk]=byLower[lk]||{label:k,convs:[]}; byLower[lk].convs.push(c); if(k.length<byLower[lk].label.length) byLower[lk].label=k; }); });
+    const items=Object.entries(byLower).map(([lk,v])=>({lk,label:v.label,convs:v.convs,count:v.convs.length})).sort((a,b)=>b.count-a.count).slice(0,T.cap);
+    const cmax=Math.max(1,...items.map(it=>it.count));
+    items.forEach(it=>{ const id=T.type+"|"+it.lk; nodes.push({ id, label:T.emoji+" "+it.label.slice(0,26), w:it.count, r:5+8*Math.sqrt(it.count/cmax), cat:T.type, type:T.type, firstAt:Math.min(...it.convs.map(c=>c.at||Infinity)) }); byConcept[id]=it.convs; }); });
+  const ats=(DB.conversations||[]).map(c=>c.at||0).filter(Boolean);
+  const tmin=ats.length?Math.min(...ats):0, tmax=ats.length?Math.max(...ats):Date.now();
+  let edges=[]; Object.entries(coocc).forEach(([k,v])=>{ const [a,b]=k.split(""); if(set.has(a)&&set.has(b)&&v>=1) edges.push({a,b,w:v}); });
+  edges=edges.sort((p,q)=>q.w-p.w).slice(0,240);
+  return { nodes, edges, byConcept, fmax, tmin, tmax };
+}
+// Memory trail: the connected ideas that led up to a node, earliest first.
+function traceTrail(g, key){
+  const el=document.getElementById("kgInfo"); if(!el) return;
+  const byId={}; g.nodes.forEach(n=>byId[n.id]=n);
+  const start=byId[key]; if(!start){ el.style.display="none"; return; }
+  const adj={}; g.edges.forEach(e=>{ (adj[e.a]=adj[e.a]||[]).push(e.b); (adj[e.b]=adj[e.b]||[]).push(e.a); });
+  const seen=new Set([key]), q=[key]; while(q.length){ const x=q.shift(); (adj[x]||[]).forEach(y=>{ if(!seen.has(y)){ seen.add(y); q.push(y); } }); }
+  const comp=[...seen].map(k=>byId[k]).filter(Boolean);
+  const before=comp.filter(n=>(n.firstAt||0)<=(start.firstAt||0)).sort((a,b)=>(a.firstAt||0)-(b.firstAt||0));
+  const led=before.length>1?before:comp.sort((a,b)=>(a.firstAt||0)-(b.firstAt||0));
+  const parts=[]; led.forEach((n,i)=>{
+    if(i){ const rel=edgeRel(led[i-1].id, n.id); parts.push(`<span style="color:var(--dim);font-size:11px"> —${rel?esc(rel)+" ":""}→ </span>`); }
+    parts.push(`<span onclick="go({name:'graph',focusConcept:'${attrJs(n.id)}'})" style="cursor:pointer;color:${n===start?'#fff':(KG_CATCOLOR[n.cat]||'#9ecbff')};font-weight:${n===start?800:600}">${esc(n.label)}</span>`);
+  });
+  el.innerHTML=`<div class="panel" style="margin:0;background:rgba(8,12,22,.97)">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">
+      <span class="nn" style="color:${KG_CATCOLOR[start.cat]||'#9ecbff'}">🧵 Memory trail · ${esc(start.label)}</span>
+      <button class="back" style="margin:0" onclick="var e=document.getElementById('kgInfo');if(e)e.style.display='none';window.__kgTrail=null">✕</button></div>
+    <div class="hint" style="margin:6px 0 0">How this grew — connected ideas, earliest first:</div>
+    <div style="margin-top:6px;line-height:1.9;font-size:13px">${parts.join("")}</div>
+    <div class="hint" style="margin-top:6px">Click a concept above to jump to it · tap the node again to also spread its conversations.</div>
+  </div>`;
+  el.style.display="block"; window.__kgTrail=seen;
+}
+function kgTypePills(g){
+  if(!window.__kgHide) window.__kgHide=new Set(["realization","question"]);
+  const counts={}; g.nodes.forEach(n=>{ const t=n.type||"concept"; counts[t]=(counts[t]||0)+1; });
+  const defs=[["concept","🔷 Concepts"],["project","🔨 Projects"],["person","👤 People"],["tech","🛠 Tech"],["realization","💡 Realizations"],["question","❓ Questions"]];
+  return defs.filter(([t])=>counts[t]).map(([t,label])=>{ const col=KG_CATCOLOR[t]||"#9ecbff", on=!window.__kgHide.has(t);
+    return `<button onclick="kgToggleType('${t}',this)" style="opacity:${on?1:0.4};cursor:pointer;border-radius:999px;padding:4px 11px;font:800 10px system-ui;border:1px solid ${col}66;background:${col}22;color:${col}">${label} ${counts[t]}</button>`; }).join("");
+}
+function kgToggleType(t, btn){ if(!window.__kgHide) window.__kgHide=new Set(); if(window.__kgHide.has(t)) window.__kgHide.delete(t); else window.__kgHide.add(t); if(btn) btn.style.opacity=window.__kgHide.has(t)?"0.4":"1"; }
+function renderGraph(){
+  if(!(DB.conversations||[]).length){ app.innerHTML=chrome(`<h1>🕸️ Knowledge Graph</h1><div class="empty">No conversations yet.<br><span style="opacity:.8">Import your ChatGPT history (📥 Imports) — your concepts become a living graph here.</span></div>`,"graph"); return; }
+  const g=buildConceptGraph();
+  if(!g.nodes.length){ app.innerHTML=chrome(`<h1>🕸️ Knowledge Graph</h1><div class="empty">Not enough shared concepts yet.<br><span style="opacity:.8">Import more conversations (or run ✨ Improve summaries) and they'll link up here.</span></div>`,"graph"); return; }
+  app.innerHTML=chrome(
+    `<h1>🕸️ Knowledge Graph</h1>
+     <p class="sub">Walking through your mind — every concept a living node. <b>Click a concept</b> to spread out the conversations inside it; <b>click a conversation</b> (the ringed endpoints) to open its Story. Drag to rearrange.</p>
+     <div style="display:flex;gap:8px;align-items:center;margin:0 0 10px">
+       <input id="kgSearch" placeholder="Search a concept…" oninput="window.__kgSearch=(this.value||'').toLowerCase()" style="flex:1;background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 11px;font:600 12px system-ui">
+       <span class="hint" style="margin:0">${g.nodes.length} nodes · ${g.edges.length} links</span>
+     </div>
+     <div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px">${kgTypePills(g)}</div>
+     <div style="position:relative;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:radial-gradient(900px 500px at 50% 30%,rgba(90,70,180,.15),transparent 60%),#05070e">
+       <canvas id="kgraph" style="display:block;width:100%;height:60vh;cursor:grab"></canvas>
+       <div id="kgInfo" style="position:absolute;left:12px;right:12px;bottom:12px;display:none"></div>
+     </div>
+     <div style="display:flex;align-items:center;gap:10px;margin:12px 2px 0">
+       <button id="kgPlay" class="back" style="margin:0" onclick="kgTogglePlay(${g.tmin},${g.tmax})">▶ Watch it grow</button>
+       <input id="kgTime" type="range" min="${g.tmin}" max="${g.tmax}" value="${g.tmax}" step="86400000"
+         oninput="window.__kgCutoff=+this.value; kgStopPlay(); updateKgDate()" style="flex:1">
+       <span id="kgDate" class="hint" style="margin:0;min-width:96px;text-align:right">all time</span>
+     </div>
+     <div class="hint" style="margin-top:8px">Move the timeline to reveal only the ideas that existed up to that point · node size = importance · color = category.</div>`, "graph");
+  window.__kgFocus = (view && view.focusConcept) || null;
+  setTimeout(()=>startGraph(g), 30);
+}
+function startGraph(g){
+  const canvas=document.getElementById("kgraph"); if(!canvas) return;
+  const dpr=window.devicePixelRatio||1, ctx=canvas.getContext("2d");
+  const size=()=>{ const r=canvas.getBoundingClientRect(); canvas.width=r.width*dpr; canvas.height=r.height*dpr; ctx.setTransform(dpr,0,0,dpr,0,0); return r; };
+  let R=size();
+  const concepts=g.nodes; concepts.forEach(n=>{ n.kind="concept"; n.key=n.id; });
+  concepts.forEach((n,i)=>{ const a=i/concepts.length*Math.PI*2; n.x=R.width/2+Math.cos(a)*(120+Math.random()*80); n.y=R.height/2+Math.sin(a)*(90+Math.random()*60); n.vx=0; n.vy=0; });
+  let convNodes=[], nodes=[], edges=[], byKey={}, adj={}; const expanded=new Set();
+  function rebuild(){
+    nodes=concepts.concat(convNodes);
+    edges=g.edges.concat(convNodes.map(cn=>({a:cn.parent,b:cn.key,w:2,cx:true})));
+    byKey={}; nodes.forEach(n=>byKey[n.key]=n);
+    adj={}; edges.forEach(e=>{ (adj[e.a]=adj[e.a]||new Set()).add(e.b); (adj[e.b]=adj[e.b]||new Set()).add(e.a); });
+  }
+  function toggle(cid){ const parent=byKey[cid]; if(!parent||parent.kind!=="concept") return;
+    if(expanded.has(cid)) expanded.delete(cid);
+    else { expanded.add(cid); (g.byConcept[cid]||[]).slice(0,10).forEach((c,i)=>{ const key=cid+"|"+c.id; if(convNodes.some(x=>x.key===key)) return;
+      const a=i/10*Math.PI*2; convNodes.push({ kind:"conv", key, convId:c.id, conv:c, label:(c.title||"Untitled").slice(0,22), r:5, cat:parent.cat, parent:cid, firstAt:c.at||0, x:parent.x+Math.cos(a)*55, y:parent.y+Math.sin(a)*55, vx:0, vy:0 }); }); }
+    convNodes=convNodes.filter(cn=>expanded.has(cn.parent)); rebuild();
+  }
+  rebuild();
+  window.__kg={ toggle, nodes:()=>nodes, expanded:()=>[...expanded] };
+  window.__kgSearch=""; window.__kgCutoff=g.tmax; let drag=null, hover=null, sel=null, downNode=null, downXY=null, moved=false;
+  const at=ev=>{ const r=canvas.getBoundingClientRect(); return {x:ev.clientX-r.left, y:ev.clientY-r.top}; };
+  const pick=p=>{ let best=null,bd=1e9; nodes.forEach(n=>{ const d=(n.x-p.x)**2+(n.y-p.y)**2; const rr=Math.max(12,n.r+7); if(d<rr*rr&&d<bd){bd=d;best=n;} }); return best; };
+  canvas.onmousedown=e=>{ const p=at(e), n=pick(p); if(n){ drag=n; downNode=n; downXY=p; moved=false; n.fixed=true; canvas.style.cursor="grabbing"; } };
+  canvas.onmousemove=e=>{ const p=at(e); if(drag){ if(Math.hypot(p.x-downXY.x,p.y-downXY.y)>4) moved=true; drag.x=p.x; drag.y=p.y; drag.vx=drag.vy=0; } else { hover=pick(p); canvas.style.cursor=hover?"pointer":"grab"; } };
+  canvas.onmouseup=()=>{ if(!drag) return; drag.fixed=false; const n=downNode; drag=null; downNode=null; canvas.style.cursor="grab";
+    if(n && !moved){ sel=n; if(n.kind==="conv") openConv(n.convId); else { toggle(n.key); traceTrail(g, n.key); } } };
+  canvas.onmouseleave=()=>{ if(drag){ drag.fixed=false; drag=null; downNode=null; } hover=null; };
+  if(window.__kgFocus){ const fk=window.__kgFocus; window.__kgFocus=null; if(byKey[fk]){ toggle(fk); sel=byKey[fk]; const p=byKey[fk]; if(p){ p.x=R.width/2; p.y=R.height*0.42; } } else { window.__kgSearch=fk; const inp=document.getElementById("kgSearch"); if(inp) inp.value=fk; } }
+  function step(){
+    if(!document.getElementById("kgraph")) return;
+    const M=nodes.length;
+    for(let i=0;i<M;i++){ const a=nodes[i]; if(a.fixed) continue;
+      for(let j=0;j<M;j++){ if(i===j) continue; const b=nodes[j]; const dx=a.x-b.x, dy=a.y-b.y; const d2=dx*dx+dy*dy+0.01, d=Math.sqrt(d2); const f=(a.kind==="conv"||b.kind==="conv"?650:1600)/d2; a.vx+=dx/d*f; a.vy+=dy/d*f; }
+      const g0=a.kind==="conv"?0.0004:0.0010*(0.5+a.w/g.fmax); a.vx+=(R.width/2-a.x)*g0; a.vy+=(R.height/2-a.y)*g0;
+    }
+    edges.forEach(e=>{ const a=byKey[e.a], b=byKey[e.b]; if(!a||!b) return; const dx=b.x-a.x, dy=b.y-a.y, dist=Math.sqrt(dx*dx+dy*dy)||1, tgt=e.cx?42:72, f=(dist-tgt)*(e.cx?0.01:0.0022)*Math.min(3,e.w);
+      if(!a.fixed){ a.vx+=dx/dist*f; a.vy+=dy/dist*f; } if(!b.fixed){ b.vx-=dx/dist*f; b.vy-=dy/dist*f; } });
+    nodes.forEach(n=>{ if(n.fixed) return; n.vx*=0.84; n.vy*=0.84; n.x+=n.vx; n.y+=n.vy; n.x=Math.max(n.r,Math.min(R.width-n.r,n.x)); n.y=Math.max(n.r,Math.min(R.height-n.r,n.y)); });
+    ctx.clearRect(0,0,R.width,R.height);
+    const q=window.__kgSearch||"", anyQ=!!q;
+    const m=n=> q && (n.kind==="concept"? n.id.includes(q) : n.label.toLowerCase().includes(q));
+    const cut=window.__kgCutoff||g.tmax, hide=window.__kgHide||new Set();
+    const vis=n=>{ if((n.firstAt||0)>cut) return false; if(n.kind==="conv"){ const p=byKey[n.parent]; return p ? (!hide.has(p.type||"concept")&&(p.firstAt||0)<=cut) : true; } return !hide.has(n.type||"concept"); };
+    const lit=n=> !anyQ ? true : (m(n) || (adj[n.key]&&[...adj[n.key]].some(k=>{ const nb=byKey[k]; return nb&&m(nb); })));
+    edges.forEach(e=>{ const a=byKey[e.a], b=byKey[e.b]; if(!a||!b||!vis(a)||!vis(b)) return; const on=!anyQ||m(a)||m(b)||(sel&&(a===sel||b===sel));
+      ctx.strokeStyle=e.cx?(on?"rgba(158,203,255,.4)":"rgba(158,203,255,.09)"):(on?"rgba(150,130,255,"+Math.min(.5,.1+.08*e.w)+")":"rgba(150,130,255,.04)");
+      ctx.lineWidth=e.cx?1:(on?Math.min(3,0.6+e.w*0.4):0.6); ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); });
+    nodes.forEach(n=>{ if(!vis(n)) return; const hi=(n===hover||n===sel), L=lit(n), col=KG_CATCOLOR[n.cat]||"#9ecbff";
+      ctx.globalAlpha=L?1:0.16;
+      if(n.kind==="conv"){
+        ctx.fillStyle=hi?"#fff":col; ctx.beginPath(); ctx.arc(n.x,n.y,hi?6:4.5,0,7); ctx.fill();
+        ctx.strokeStyle=col; ctx.lineWidth=1.3; ctx.beginPath(); ctx.arc(n.x,n.y,hi?9:7,0,7); ctx.stroke();
+        if(hi){ ctx.fillStyle="#eaf2ff"; ctx.font="700 11px system-ui"; ctx.textAlign="center"; ctx.fillText(n.label+" →", n.x, n.y-12); }
+      } else {
+        const gg=ctx.createRadialGradient(n.x,n.y,0,n.x,n.y,n.r*1.9); gg.addColorStop(0,col); gg.addColorStop(1,"rgba(5,7,14,0)");
+        ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(n.x,n.y,n.r*1.9,0,7); ctx.fill();
+        ctx.fillStyle=hi?"#fff":col; ctx.beginPath(); ctx.arc(n.x,n.y,n.r*(hi?0.95:0.7),0,7); ctx.fill();
+        if(expanded.has(n.key)){ ctx.strokeStyle="rgba(255,255,255,.55)"; ctx.lineWidth=1.4; ctx.beginPath(); ctx.arc(n.x,n.y,n.r*1.15,0,7); ctx.stroke(); }
+        if(n.r>10||hi){ ctx.fillStyle="rgba(234,242,255,"+(L?0.95:0.3)+")"; ctx.font=(hi?"800 ":"600 ")+Math.round(Math.min(15,9+n.r*0.22))+"px system-ui"; ctx.textAlign="center"; ctx.fillText(n.label, n.x, n.y-n.r-4); }
+      }
+      ctx.globalAlpha=1;
+    });
+    requestAnimationFrame(step);
+  }
+  window.addEventListener("resize",()=>{ R=size(); });
+  step();
+}
+function showGraphNode(n,g){
+  const el=document.getElementById("kgInfo"); if(!el) return;
+  const convs=(g.byConcept[n.id]||[]).slice().sort((a,b)=>(b.messageCount||0)-(a.messageCount||0));
+  const rows=convs.slice(0,8).map(c=>`<button class="qrow" style="margin:0 0 5px" onclick="openChapterForConv('${c.id}')"><span class="dot done"></span><span><span class="qt">${esc(c.title)}</span> <span style="color:var(--dim);font-weight:600">· ${fmtDate(c.at)}</span></span></button>`).join("");
+  const neigh=g.edges.filter(e=>e.a===n.id||e.b===n.id).sort((a,b)=>b.w-a.w).map(e=>e.a===n.id?e.b:e.a).slice(0,8);
+  el.innerHTML=`<div class="panel" style="margin:0;background:rgba(8,12,22,.97)">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">
+      <span class="nn" style="color:${KG_CATCOLOR[n.cat]||'#9ecbff'}">🔷 ${esc(n.label)}</span>
+      <button class="back" style="margin:0" onclick="var e=document.getElementById('kgInfo');if(e)e.style.display='none'">✕</button></div>
+    <div class="hint" style="margin:4px 0 0">importance ${n.w} · in ${convs.length} conversation${convs.length===1?"":"s"} · ${neigh.length} linked concept${neigh.length===1?"":"s"}</div>
+    ${neigh.length?`<div class="lab" style="margin-top:8px">Connected concepts</div><div class="links">${neigh.map(x=>`<span class="lk">${esc(titleCase(x))}</span>`).join("")}</div>`:""}
+    <div class="lab" style="margin-top:8px">Conversations</div>
+    <div style="max-height:26vh;overflow:auto">${rows||"<span class='hint'>—</span>"}</div>
+  </div>`;
+  el.style.display="block";
+}
+function openChapterForConv(id){
+  const book=buildBook(); const ch=book.chapters.find(c=>c.convs.some(x=>x.id===id));
+  if(ch) openChapterFromLibrary(ch.n); else openConvInGalaxy(id);
+}
+/* ---- ONE CONVERSATION: read it + have Inkling elaborate (uses the fuller excerpt) ---- */
+function openConv(id){ go({name:"conv", convId:id}); }
+let _elabId=null;
+async function elaborateConv(id){
+  const c=(DB.conversations||[]).find(x=>x.id===id); if(!c) return;
+  if(!inkToken()){ _elabId="__signin"; renderConvDetail(id); return; }
+  _elabId=id; renderConvDetail(id);
+  const msg=`Here is one of my past conversations. Elaborate on what I was really exploring — the questions I was asking, the ideas at play, and how they connect to my thinking about consciousness, AI, and the mind. Write 2–3 thoughtful paragraphs grounded ONLY in the text below; where I was uncertain, preserve the uncertainty. Do not invent.\n\nTitle: ${c.title}\n\n${c.excerpt||c.summary||""}`;
+  const context="You are Inkling, a thoughtful mentor helping the user understand their own past conversations. Ground everything strictly in the provided text; never invent facts or events. Second person, warm, precise, curious. No headings, no lists.";
+  let text=null; try{ text=await chatLLM(msg, context); }catch(e){ text=null; }
+  _elabId=null;
+  if(text){ DB.elaborations=DB.elaborations||{}; DB.elaborations[id]=text; persist(); }
+  else { _elabId="__fail"; }
+  renderConvDetail(id);
+}
+function renderConvDetail(id){
+  const c=(DB.conversations||[]).find(x=>x.id===id);
+  if(!c){ go({name:"storybook"}); return; }
+  const dialogue = c.excerpt
+    ? c.excerpt.split("\n").filter(Boolean).map(line=>{ const me=/^Me:/.test(line); return `<div style="margin:0 0 8px;padding:9px 12px;border-radius:12px;max-width:88%;${me?'background:rgba(88,166,255,.14);border:1px solid rgba(88,166,255,.3);margin-left:auto':'background:var(--panel);border:1px solid var(--line)'}"><span class="hint" style="margin:0 0 2px;display:block">${me?'You':'Inkling / AI'}</span><span style="color:#e6edf3;line-height:1.55">${esc(line.replace(/^(Me:|AI:)\s*/,""))}</span></div>`; }).join("")
+    : `<div class="hint">Only a short summary was saved for this one. Re-import your export (📥 Imports) to bring in the fuller conversation.</div><p style="color:#dbe4ee;line-height:1.6;margin-top:8px">${esc(c.summary||"")}</p>`;
+  const el=(DB.elaborations||{})[id];
+  let elab;
+  if(_elabId===id) elab=`<div class="panel"><p class="hint" style="margin:0">✍️ Inkling is elaborating…</p></div>`;
+  else if(el) elab=`<div class="panel" style="border-color:rgba(167,139,250,.35)"><div style="font:800 10px system-ui;color:var(--violet);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">✍️ Inkling elaborates</div><div style="font:400 15.5px/1.85 Georgia,serif;color:#eef2f8">${mdToHtml(el)}</div><div style="margin-top:8px"><button class="back" onclick="elaborateConv('${attrJs(id)}')">↻ Again</button></div></div>`;
+  else { const notice=(_elabId==="__signin"||_elabId==="__fail")?`<div class="panel" style="border-color:rgba(251,191,36,.5);background:rgba(251,191,36,.07);margin-top:8px"><b style="color:#fbbf24">⚠ Inkling couldn't write it.</b><div style="color:#dbe4ee;margin-top:5px;line-height:1.55">Real AI prose needs two things: <b>sign in</b> on the main app, and set an <b>ANTHROPIC_API_KEY</b> in your Render environment. Until then this stays a plain reader — nothing else breaks.</div></div>`:"";
+    elab=`<div style="margin:6px 0"><button class="btn" style="font:800 12px system-ui" onclick="elaborateConv('${attrJs(id)}')">${inkToken()?"✍️ Have Inkling write about this":"✍️ Have Inkling write about this (sign in for AI)"}</button>${notice}</div>`; }
+  const ex=c.extract;
+  const chip=(x,col)=>`<span class="lk" style="border-color:${col}55;color:${col}">${esc(x)}</span>`;
+  const sect=(label,arr,col)=> (arr&&arr.length) ? `<div class="lab" style="margin-top:10px">${label}</div><div class="links">${arr.map(x=>chip(x,col)).join("")}</div>` : "";
+  const extractHTML = ex ? `${sect("💡 Realizations",ex.realizations,"#39d98a")}${sect("❓ Questions",ex.questions,"#9ecbff")}${sect("🔨 Projects",ex.projects,"#ff8a5b")}${sect("👤 People",ex.people,"#f0abfc")}${sect("🛠 Technologies",ex.technologies,"#22d3ee")}`
+    : `<div class="hint" style="margin-top:10px">Run <b>🔮 Extract nodes with AI</b> on the Imports page to pull the questions, realizations, projects and people from this conversation.</div>`;
+  const focusC=canonConcept((c.concepts||[])[0]||"");
+  const graphBtn=focusC?`<button class="back" style="margin:8px 0 0" onclick="go({name:'graph',focusConcept:'${attrJs(focusC)}'})">🕸️ See where this maps on the graph</button>`:"";
+  app.innerHTML=chrome(
+    `<button class="back" onclick="go({name:'storybook'})">‹ Back to your library</button>
+     <h1 style="margin:10px 0 2px">${esc(c.title)}</h1>
+     <p class="sub">${esc((c.provider||"ai").toUpperCase())} · ${fmtDate(c.at)} · ${c.messageCount||0} messages${c.excerpt?"":" · summary only"}</p>
+     <div class="links" style="margin:0 0 6px">${(c.concepts||[]).slice(0,10).map(x=>`<span class="lk">${esc(x)}</span>`).join("")}</div>
+     ${graphBtn}
+     ${extractHTML}
+     <div style="margin:14px 0 0"></div>
+     ${elab}
+     <div style="margin:18px 0 8px"><h2 style="font:800 13px system-ui;color:var(--violet);margin:0">The conversation</h2></div>
+     ${dialogue}`, "graph");
+  window.scrollTo(0,0);
+}
+let _kgTimer=null;
+function updateKgDate(){ const el=document.getElementById("kgDate"), s=document.getElementById("kgTime"); if(!el||!s) return; el.textContent=(+s.value>=+s.max)?"all time":fmtDate(+s.value); }
+function kgStopPlay(){ if(_kgTimer){ clearInterval(_kgTimer); _kgTimer=null; } const b=document.getElementById("kgPlay"); if(b) b.textContent="▶ Watch it grow"; }
+function kgTogglePlay(tmin,tmax){
+  if(_kgTimer){ kgStopPlay(); return; }
+  const s=document.getElementById("kgTime"), b=document.getElementById("kgPlay"); if(!s) return;
+  if(+s.value>=tmax) { s.value=tmin; window.__kgCutoff=tmin; updateKgDate(); }
+  if(b) b.textContent="⏸ Pause";
+  const stepMs=Math.max(86400000, (tmax-tmin)/120);
+  _kgTimer=setInterval(()=>{ const sl=document.getElementById("kgTime"); if(!sl){ kgStopPlay(); return; }
+    let v=+sl.value+stepMs; if(v>=tmax){ v=tmax; kgStopPlay(); } sl.value=v; window.__kgCutoff=v; updateKgDate(); }, 55);
 }
 
 /* ---- STUDY PATHS: pick a field, learn beginner → advanced ---- */
@@ -670,41 +1043,552 @@ function openConvInGalaxy(id){
   go({name:"galaxy"});
   setTimeout(()=>{ const c=(DB.conversations||[]).find(x=>x.id===id); if(c) showGalaxyInfo(c); }, 70);
 }
+/* ---- LIVING STORY: revisit old chapters as understanding deepens ----
+   A concept met in an early conversation, then met again later alongside NEW
+   ideas, is understanding that grew. We surface that then→now shift, grounded in
+   your own words. Nothing is rewritten; the old chapters stay — this is the diff. */
+function deepenings(){
+  const convs=(DB.conversations||[]).slice().sort((a,b)=>a.at-b.at); // oldest first
+  if(convs.length<2) return [];
+  const byConcept={};
+  convs.forEach(c=>{ const seen=new Set();
+    (c.concepts||[]).forEach(x=>{ const k=String(x).toLowerCase().trim(); if(!k||seen.has(k))return; seen.add(k);
+      (byConcept[k]=byConcept[k]||[]).push(c); }); });
+  const out=[];
+  Object.keys(byConcept).forEach(k=>{
+    const list=byConcept[k]; if(list.length<2) return;
+    const first=list[0], recent=list[list.length-1];
+    if(recent.at===first.at) return;
+    const then=new Set((first.concepts||[]).map(x=>String(x).toLowerCase()).filter(x=>x!==k));
+    const nowCount={};
+    list.slice(1).forEach(c=>(c.concepts||[]).forEach(x=>{ const kk=String(x).toLowerCase(); if(kk!==k && !then.has(kk)) nowCount[kk]=(nowCount[kk]||0)+1; }));
+    const gained=Object.keys(nowCount).sort((a,b)=>nowCount[b]-nowCount[a]);
+    if(!gained.length) return; // no real deepening — skip
+    const label=(first.concepts||[]).find(x=>String(x).toLowerCase()===k)||k;
+    const spanDays=Math.max(1,Math.round((recent.at-first.at)/864e5));
+    out.push({ key:k, label, first, recent, list, count:list.length,
+      then:[...then], gained, spanDays, score:gained.length*2+list.length+Math.min(6,spanDays/20) });
+  });
+  return out.sort((a,b)=>b.score-a.score);
+}
+function deepeningCard(d, hero){
+  const thenSnip=conceptSnippet(d.first, d.key), nowSnip=conceptSnippet(d.recent, d.key);
+  const thenNb=d.then.slice(0,4), gained=d.gained.slice(0,5);
+  const q=s=>s?` <span style="color:var(--dim)">“${esc(s)}”</span>`:"";
+  const btns=`<div style="margin-top:10px;display:flex;gap:7px;flex-wrap:wrap">
+      <button class="btn ghost" style="padding:7px 12px;font:800 11px system-ui" onclick="openConvInGalaxy('${d.first.id}')">↩ Revisit the first chapter</button>
+      <button class="btn ghost" style="padding:7px 12px;font:800 11px system-ui" onclick="openConvInGalaxy('${d.recent.id}')">→ Where it stands now</button></div>`;
+  if(hero){
+    return `<div class="panel" style="border-color:rgba(57,217,138,.4);background:rgba(57,217,138,.05)">
+      <h3 style="font:800 12px system-ui;color:#39d98a;margin:0 0 8px;text-transform:uppercase;letter-spacing:.04em">🌱 Inkling revisits · ${esc(d.label)}</h3>
+      <p style="line-height:1.75;color:#dbe4ee;margin:0 0 8px">When you first met <b>${esc(d.label)}</b> — ${fmtDate(d.first.at)}, in <i>${esc(d.first.title)}</i> — it sat among ${esc(thenNb.join(", ")||"a few first ideas")}.${q(thenSnip)}</p>
+      <p style="line-height:1.75;color:#dbe4ee;margin:0 0 8px">${d.spanDays} days later, across ${d.count} conversations, you've grown it toward <b>${esc(gained.join(", "))}</b>.${q(nowSnip)}</p>
+      <p style="line-height:1.75;color:var(--dim);margin:0">That's the shift worth noticing: <b>${esc(d.label)}</b> went from a single thread to a hub linking ${d.count} of your conversations.</p>${btns}</div>`;
+  }
+  return `<div class="node">
+    <div class="nh"><span class="nn">${esc(d.label)}</span><span class="nc">${d.count} chapters · ${d.spanDays}d</span></div>
+    <div style="margin-top:6px;color:#dbe4ee;line-height:1.55">Then <span style="color:var(--dim)">(${fmtDate(d.first.at)})</span>: ${esc(thenNb.slice(0,3).join(", ")||"first mention")} → Now: <b>${esc(gained.slice(0,3).join(", "))}</b>.</div>${btns}</div>`;
+}
+
+/* ---- THE BOOK: your whole history as a long-form, chapter-by-chapter read ----
+   Every recurring theme becomes a chapter; conversations are its pages. Ordered by
+   when each theme first appeared, so the book follows your journey through time. */
+function titleCase(s){ return String(s||"").replace(/\b[a-z]/g,m=>m.toUpperCase()); }
+// --- concept cleanup: drop junk, merge synonyms to a canonical head term ---
+const CONCEPT_JUNK=new Set(["data home","home eugeneous","phone computer","usr lib","system out","eugeneous eugeneousvm","internal modules","data data","eugeneousvm","https termux","null undefined","system system"]);
+const CONCEPT_PRIMARY=["pixel prodigy","entity software","operating system","smart contract","machine learning","neural network","language model","knowledge graph","unity","solana","blockchain","ethereum","python","javascript","consciousness","quantum","cosmic","electronics","transistor","voltage","robot","website","backend","frontend","game","physics","philosophy","energy"];
+function canonConcept(x){
+  const s=String(x||"").toLowerCase().trim(); if(!s||CONCEPT_JUNK.has(s)) return null;
+  for(const p of CONCEPT_PRIMARY){ if(s===p||s.includes(" "+p)||s.includes(p+" ")||s.startsWith(p)||s.endsWith(p)) return p; }
+  return s;
+}
+function canonConcepts(c){ const out=[], seen=new Set(); (c.concepts||[]).forEach(x=>{ const k=canonConcept(x); if(k&&!seen.has(k)){ seen.add(k); out.push(k); } }); return out; }
+// --- Parts: group the many chapters into a few domains ---
+const BOOK_PARTS=[
+  { id:"build", name:"Building & Product", kw:["pixel prodigy","entity software","app","website","portfolio","backend","frontend","product","startup","launch","deploy","saas","platform","landing"] },
+  { id:"chain", name:"Blockchain & Crypto", kw:["solana","smart contract","blockchain","ethereum","token","crypto","wallet","web3","nft","defi","mint"] },
+  { id:"ai", name:"AI & Machine Learning", kw:["machine learning","neural network","language model","ai","model","training","llm","gpt","agent","prompt","embedding","gradient"] },
+  { id:"game", name:"Games & 3D Worlds", kw:["unity","game","vr","3d","shader","animation","sentis","render","godot","unreal"] },
+  { id:"code", name:"Systems & Code", kw:["python","javascript","operating system","linux","code","programming","script","database","server","api","algorithm","memory","cpu"] },
+  { id:"hw", name:"Electronics & Hardware", kw:["electronics","voltage","transistor","circuit","arduino","raspberry","sensor","robot","motor","plc"] },
+  { id:"cosmos", name:"Mind, Science & Cosmos", kw:["consciousness","quantum","cosmic","energy","physics","universe","light","mind","awareness","philosophy","reality","time"] },
+  { id:"life", name:"Learning & Life", kw:["learning","study","habit","goal","health","psychology","note","finance","tax"] },
+];
+function partOf(ch){
+  const hay=(ch.anchor+" "+ch.threads.join(" ")).toLowerCase();
+  let best=null, score=0;
+  BOOK_PARTS.forEach(p=>{ let s=0; p.kw.forEach(k=>{ if(hay.includes(k)) s++; }); if(s>score){ score=s; best=p; } });
+  return best ? best.id : "other";
+}
+function currentGroupMode(){ return DB.groupMode==="semantic" ? "semantic" : "keyword"; }
+function setGroupMode(m){ if(_narrAll.running||_improveRun.running) return; DB.groupMode=(m==="semantic"?"semantic":"keyword"); persist(); renderStorybook(); }
+function groupModeToggle(){
+  const m=currentGroupMode();
+  const pill=(id,label,desc)=>`<button onclick="setGroupMode('${id}')" title="${desc}" style="cursor:pointer;border-radius:999px;padding:5px 12px;font:800 11px system-ui;border:1px solid ${id===m?'rgba(158,203,255,.8)':'var(--line)'};background:${id===m?'rgba(158,203,255,.2)':'transparent'};color:${id===m?'#cfe4ff':'var(--dim)'}">${label}</button>`;
+  return `<div style="margin:2px 0 6px;text-align:center"><span class="hint" style="margin:0 6px 0 0">Group chapters by</span>`+
+    pill('keyword','🔑 Keywords','Group by a shared concept — exact and fast')+
+    pill('semantic','🧭 Meaning','Group by overall similarity — the local vector service')+`</div>`;
+}
+// Keyword grouping: anchor = a shared concept (fast, exact).
+function groupKeyword(convs){
+  const cc=new Map(); convs.forEach(c=>cc.set(c, canonConcepts(c)));
+  const cf={}; convs.forEach(c=>cc.get(c).forEach(x=>cf[x]=(cf[x]||0)+1));
+  const anchor=c=>{ const cs=cc.get(c); for(const x of cs){ if((cf[x]||0)>=3) return x; } return cs[0]||null; };
+  const groups={}; convs.forEach(c=>{ const a=anchor(c); const key=a==null?"__brief":a; (groups[key]=groups[key]||[]).push(c); });
+  const brief=[], chapters=[];
+  Object.entries(groups).forEach(([k,v])=>{ if(k==="__brief"||v.length<2) brief.push(...v); else chapters.push({ anchor:k, convs:v.slice() }); });
+  chapters.forEach(ch=>{ const counts={}; ch.convs.forEach(c=>cc.get(c).forEach(x=>{ if(x!==ch.anchor) counts[x]=(counts[x]||0)+1; }));
+    ch.threads=Object.keys(counts).filter(k=>counts[k]>=2).sort((a,b)=>counts[b]-counts[a]).slice(0,6); });
+  return { chapters, brief };
+}
+// --- local VECTOR SERVICE: TF-IDF vectors + cosine (kNN) → group by MEANING ---
+function stemTok(w){ if(w.length<=4) return w; const s=w.replace(/(ational|ization|iveness|ousness|fulness|ing|edly|ies|ied|ily|ness| ments|ment|tions|tion|sions|sion|ers|ors|est|ed|es|s)$/,""); return s.length>=3?s:w; }
+function convTF(c){ const tf={}; const add=(t,w)=>{ const s=stemTok(String(t)); if(s&&s.length>2) tf[s]=(tf[s]||0)+w; };
+  cgTok((c.title||"")+" "+(c.summary||"")).forEach(t=>add(t,1));
+  canonConcepts(c).forEach(t=>String(t).split(/\s+/).forEach(w=>{ if(w) add(w,2); }));
+  return tf; }
+function groupSemantic(convs){
+  const tfs=convs.map(convTF), N=convs.length, df={};
+  tfs.forEach(tf=>Object.keys(tf).forEach(t=>df[t]=(df[t]||0)+1));
+  const vecs=tfs.map(tf=>{ const v={}; let n=0; for(const t in tf){ const idf=Math.log((N+1)/((df[t]||0)+1))+1; const w=tf[t]*idf; v[t]=w; n+=w*w; } n=Math.sqrt(n)||1; for(const t in v) v[t]/=n; return v; });
+  const cos=(a,b)=>{ const [x,y]=Object.keys(a).length<Object.keys(b).length?[a,b]:[b,a]; let s=0; for(const t in x){ if(y[t]!==undefined) s+=x[t]*y[t]; } return s; };
+  // k-nearest-neighbour edges (adapts to the data's scale better than a fixed cutoff)
+  const K=6, FLOOR=0.02, MAX=30, edges=[];
+  for(let i=0;i<N;i++){ const sims=[];
+    for(let j=0;j<N;j++){ if(j===i) continue; const s=cos(vecs[i],vecs[j]); if(s>FLOOR) sims.push([s,j]); }
+    sims.sort((a,b)=>b[0]-a[0]); sims.slice(0,K).forEach(([s,j])=>edges.push([s,i,j])); }
+  edges.sort((a,b)=>b[0]-a[0]);
+  const par=convs.map((_,i)=>i), sz=convs.map(()=>1), find=x=>{ while(par[x]!==x){ par[x]=par[par[x]]; x=par[x]; } return x; };
+  edges.forEach(([s,i,j])=>{ const a=find(i),b=find(j); if(a!==b && sz[a]+sz[b]<=MAX){ par[a]=b; sz[b]+=sz[a]; } });
+  const byRoot={}; convs.forEach((c,i)=>{ const r=find(i); (byRoot[r]=byRoot[r]||[]).push(i); });
+  const brief=[], chapters=[];
+  Object.values(byRoot).forEach(idxs=>{ if(idxs.length<2){ idxs.forEach(i=>brief.push(convs[i])); return; }
+    const rank={}; idxs.forEach(i=>(convs[i].concepts||[]).forEach(x=>{ const k=canonConcept(x); if(k) rank[k]=(rank[k]||0)+1; }));
+    let terms=Object.keys(rank).sort((a,b)=>rank[b]-rank[a]);
+    if(!terms.length){ // fall back to centroid vector terms
+      const cent={}; idxs.forEach(i=>{ for(const t in vecs[i]) cent[t]=(cent[t]||0)+vecs[i][t]; });
+      terms=Object.keys(cent).sort((a,b)=>cent[b]-cent[a]); }
+    chapters.push({ anchor:terms[0]||"threads", convs:idxs.map(i=>convs[i]), threads:terms.slice(1,7) }); });
+  return { chapters, brief };
+}
+function buildBook(){
+  const convs=(DB.conversations||[]).slice();
+  const g=(currentGroupMode()==="semantic" && convs.length>=6) ? groupSemantic(convs) : groupKeyword(convs);
+  const chapters=g.chapters, brief=g.brief;
+  chapters.forEach(ch=>{ ch.convs.sort((a,b)=>(a.at||0)-(b.at||0)); ch.title=titleCase(ch.anchor); ch.threads=ch.threads||[];
+    ch.span=[ch.convs[0].at, ch.convs[ch.convs.length-1].at]; });
+  const byPart={}; chapters.forEach(ch=>{ (byPart[partOf(ch)]=byPart[partOf(ch)]||[]).push(ch); });
+  const nameById={}; BOOK_PARTS.forEach(p=>nameById[p.id]=p.name); nameById.other="Other Explorations";
+  let parts=Object.entries(byPart).map(([id,chs])=>({ id, name:nameById[id]||"Other",
+    chapters:chs.sort((a,b)=>(a.span[0]||0)-(b.span[0]||0)), first:Math.min(...chs.map(c=>c.span[0]||Infinity)) }));
+  parts.sort((a,b)=>a.first-b.first);
+  let n=0; parts.forEach(p=>p.chapters.forEach(ch=>ch.n=++n));
+  const ordered=[].concat(...parts.map(p=>p.chapters));
+  return { chapters:ordered, parts, brief:brief.sort((a,b)=>(a.at||0)-(b.at||0)), total:convs.length, mode:currentGroupMode(),
+    span:[Math.min(...convs.map(c=>c.at||Infinity)), Math.max(...convs.map(c=>c.at||0))] };
+}
+function fmtSpan(a,b){ const A=fmtDate(a), B=fmtDate(b); return A===B?A:`${A} – ${B}`; }
+function convPage(c){
+  const sum=c.summary?`<div style="margin:3px 0 0;color:var(--dim);line-height:1.6">${esc(c.summary)}</div>`:"";
+  return `<button class="qrow" style="margin:0 0 9px;align-items:flex-start" onclick="openConvInGalaxy('${c.id}')">
+     <span class="dot done" style="margin-top:5px"></span>
+     <span><span class="qt">${esc(c.title)}</span> <span style="color:var(--dim);font-weight:600">· ${fmtDate(c.at)}</span>${sum}</span></button>`;
+}
+
+/* ---- AI-NARRATED CHAPTERS: let Inkling write each chapter as real prose ----
+   On demand (per chapter), cached in DB.narration keyed by anchor + a signature
+   (conv count) so it regenerates only when the chapter actually grows. Falls back
+   to the structural chapter for guests / no API key. */
+let _writingAnchor=null, _narrNote=null, _bookScrollCh=null, _narrAll={running:false,stop:false};
+// Narration genres — the same real journey, told in different voices.
+const GENRES={
+  scifi:{ label:"🚀 Sci-fi", frame:"a science-fiction saga whose protagonist is the reader ('you') — an explorer charting the frontier of their own understanding. Render ideas with the atmosphere of great science fiction: learning as venturing into unmapped territory; concepts as systems, forces and signals; the mind as a universe being surveyed. Voice: cinematic, vivid, propulsive, a little awestruck.", line:"Write it as a chapter of a SCIENCE-FICTION novel — cinematic and atmospheric; ideas as systems, forces and signals; the mind as an expanding universe being charted." },
+  literary:{ label:"📖 Literary", frame:"a work of literary nonfiction — the intimate, reflective memoir of a mind growing over time. Voice: warm, curious, precise, humane.", line:"Write it as warm literary nonfiction — reflective, intimate, precise." },
+  documentary:{ label:"🎬 Documentary", frame:"a documentary charting a mind's development — clear, authoritative and quietly compelling, like a great science documentary. Voice: measured, lucid, observational.", line:"Write it as a documentary voiceover — measured, lucid, observational, quietly compelling." },
+  mythic:{ label:"⚔️ Mythic", frame:"an epic myth — the reader ('you') as a seeker on a legendary quest for understanding. Ideas are trials, thresholds and revelations. Voice: grand, timeless, elemental.", line:"Write it as an epic myth — grand and timeless; ideas as trials, thresholds and revelations." },
+  noir:{ label:"🕵️ Noir", frame:"a hardboiled noir — the reader ('you') as a detective chasing the truth through a case that keeps deepening. Ideas are clues, suspects and revelations in the dark. Voice: terse, atmospheric, wry.", line:"Write it as hardboiled noir — terse, atmospheric, wry; ideas as clues and revelations in the dark." },
+  adventure:{ label:"🧭 Adventure", frame:"a pulp adventure — the reader ('you') as an explorer on an expedition into uncharted knowledge. Voice: propulsive, vivid, exhilarating.", line:"Write it as a rollicking adventure — propulsive and vivid, an expedition into the unknown." },
+  fairytale:{ label:"🧚 Fable", frame:"a fable — the reader ('you') as a wanderer learning the deep rules of a wondrous world. Ideas are enchantments, riddles and gifts. Voice: gentle, wondrous, a little wise.", line:"Write it as a fable — gentle and wondrous; ideas as enchantments, riddles and gifts." }
+};
+function currentGenre(){ return (DB.narrationGenre && GENRES[DB.narrationGenre]) ? DB.narrationGenre : "scifi"; }
+// per-genre narration cache; legacy flat {text,sig,at} entries read as the 'literary' voice.
+function narrEntry(anchor){ const e=(DB.narration||{})[anchor]; if(!e) return null; if(typeof e.text==="string") return currentGenre()==="literary"?{text:e.text,sig:e.sig}:null; return e[currentGenre()]||null; }
+function saveNarr(anchor,obj){ DB.narration=DB.narration||{}; let e=DB.narration[anchor]; if(e&&typeof e.text==="string") e={literary:{text:e.text,sig:e.sig,at:e.at}}; if(!e||typeof e!=="object") e={}; e[currentGenre()]=obj; DB.narration[anchor]=e; }
+function setGenre(g){ if(!GENRES[g]||_narrAll.running) return; DB.narrationGenre=g; persist(); renderStorybook(); }
+async function chatLLM(message, context){
+  const token=inkToken(); if(!token) return null;
+  try{
+    const res=await fetch(INK_API+"/api/inkling/chat",{ method:"POST",
+      headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+token },
+      body:JSON.stringify({ message:String(message).slice(0,3000), history:[], mindSummary:String(context).slice(0,2000), referenceDate:new Date().toISOString().slice(0,10) }) });
+    if(!res.ok) return null;
+    const d=await res.json();
+    return (d && d.source==="llm" && d.reply) ? d.reply : null;
+  }catch(e){ return null; }
+}
+async function narrateChapter(ch){
+  const g=GENRES[currentGenre()];
+  const lines=ch.convs.slice(0,18).map(c=>`- ${c.title} (${fmtDate(c.at)})${c.summary?": "+String(c.summary).slice(0,90):""}`).join("\n");
+  const msg=`Write Chapter ${ch.n}, titled "${ch.title}". ${g.line} `+
+    `Ground it entirely in these real conversations — do not invent facts, names, or events:\n${lines}\n\n`+
+    `Across ${ch.convs.length} conversation${ch.convs.length===1?"":"s"} between ${fmtSpan(ch.span[0],ch.span[1])}, you kept returning to ${ch.title}.`+
+    (ch.threads.length?` Recurring threads: ${ch.threads.join(", ")}.`:"")+
+    `\n\nWrite 2 to 4 short paragraphs in second person ("you"): what drew you in, the obstacles and turns, how your understanding changed and grew, and where it points next. Commit fully to the genre's atmosphere and imagery — but every claim must stay faithful to the conversations above. No headings, no bullet points.`;
+  const context=`You are the narrator of ${g.frame} NEVER fabricate events or facts — only the voice is stylized; the substance stays true to the user's actual conversations. Second person, no headings or lists. You're chronicling Jeremy, a first-principles systems thinker whose paths span electronics, AI, and robotics.`;
+  return await chatLLM(msg, context);
+}
+async function writeChapter(anchor){
+  const ch=buildBook().chapters.find(c=>c.anchor===anchor); if(!ch) return;
+  _bookScrollCh=ch.n;
+  if(!inkToken()){ _narrNote=anchor; renderStorybook(); return; }
+  _narrNote=null; _writingAnchor=anchor; renderStorybook();
+  const text=await narrateChapter(ch);
+  _writingAnchor=null;
+  if(text){ saveNarr(anchor,{ text, sig:ch.convs.length, at:Date.now() }); persist(); }
+  else { _narrNote=anchor; }
+  _bookScrollCh=ch.n; renderStorybook();
+}
+function narrationInline(ch){
+  const jsA=attrJs(ch.anchor);
+  if(_writingAnchor===ch.anchor)
+    return `<p class="hint" style="text-align:center;margin:12px 0">✍️ Inkling is writing this chapter…</p>`;
+  const nar=narrEntry(ch.anchor), done=nar&&nar.sig===ch.convs.length;
+  if(done)
+    return `<div style="text-align:center;margin:10px 0"><button class="back" onclick="writeChapter('${jsA}')">↻ Rewrite in ${esc(GENRES[currentGenre()].label)}</button></div>`;
+  const label = inkToken() ? "✍️ Have Inkling write this chapter in prose" : "✍️ Write this chapter (sign in for AI)";
+  return `<div style="text-align:center;margin:12px 0">
+    <button class="btn" style="font:800 11px system-ui;padding:6px 13px" onclick="writeChapter('${jsA}')">${label}</button>
+    ${_narrNote===ch.anchor?'<div class="hint" style="margin-top:6px">Sign in on the main app + set an API key on Render to enable.</div>':''}
+  </div>`;
+}
+
+// One conversation, as a flowing line in the book (not a button/list item).
+function bookEntry(c){
+  return `<p style="font:400 15px/1.72 Georgia,serif;color:#c9d3e2;margin:0 0 10px;padding-left:14px;border-left:2px solid rgba(167,139,250,.16);cursor:pointer" onclick="openConv('${c.id}')"><span style="color:var(--violet);font-weight:700;font-size:12.5px">${fmtDate(c.at)}</span> — <b style="color:#e7edf6">${esc(c.title)}</b>${c.summary?`. ${esc(c.summary)}`:""}</p>`;
+}
+function bookChapter(ch, deepMap){
+  const nar=narrEntry(ch.anchor), narr=(nar&&nar.sig===ch.convs.length)?nar.text:null;
+  const threadLine=ch.threads.length?` The ideas woven through it: <b>${ch.threads.map(esc).join(", ")}</b>.`:"";
+  const opener=`Between ${fmtSpan(ch.span[0],ch.span[1])}, across ${ch.convs.length} conversation${ch.convs.length===1?"":"s"}, you kept returning to <b>${esc(ch.title)}</b>.${threadLine}`;
+  const d=deepMap[ch.anchor];
+  const deepNote=d?`<p style="font:italic 400 15px/1.8 Georgia,serif;color:#a9e6c9;margin:0 0 12px">When ${esc(d.label)} first appeared (${fmtDate(d.first.at)}) it sat among ${esc(d.then.slice(0,3).join(", "))||"your first ideas"}; by ${fmtDate(d.recent.at)} you'd tied it to ${esc(d.gained.slice(0,3).join(", "))}.</p>`:"";
+  const body = narr
+    ? `<div style="font:400 16.5px/1.95 Georgia,serif;color:#eef2f8;margin:0 0 8px">${mdToHtml(narr)}</div>
+       <div style="font:800 10px system-ui;color:var(--dim);letter-spacing:.1em;text-transform:uppercase;margin:16px 0 8px">Drawn from ${ch.convs.length} conversation${ch.convs.length===1?"":"s"}</div>${ch.convs.map(bookEntry).join("")}`
+    : `<p style="font:400 16.5px/1.95 Georgia,serif;color:#eaeff7;margin:0 0 12px">${opener}</p>${deepNote}${ch.convs.map(bookEntry).join("")}`;
+  return `<section id="ch${ch.n}" style="margin:0 0 46px;scroll-margin-top:16px">
+    <div style="text-align:center;margin:40px 0 18px">
+      <div style="font:800 11px system-ui;color:var(--violet);letter-spacing:.18em;text-transform:uppercase">Chapter ${ch.n}</div>
+      <h2 style="font:800 27px/1.2 Georgia,serif;margin:8px 0 0;color:#f3f6fc">${esc(ch.title)}</h2>
+      <div style="width:44px;height:2px;background:rgba(167,139,250,.5);margin:14px auto 0"></div>
+    </div>
+    ${body}
+    ${narrationInline(ch)}
+  </section>`;
+}
+/* ---- WRITE THE WHOLE BOOK: narrate every chapter in the background ---- */
+function updateChapterDom(ch, deepMap){ const el=document.getElementById("ch"+ch.n); if(el) el.outerHTML=bookChapter(ch, deepMap); }
+function bookProgress(done,total,label,stopExpr){
+  label=label||"Writing your book"; stopExpr=stopExpr||"_narrAll.stop=true";
+  let el=document.getElementById("bookProgress");
+  if(!el){ el=document.createElement("div"); el.id="bookProgress";
+    el.style.cssText="position:fixed;left:50%;bottom:78px;transform:translateX(-50%);z-index:9999;background:rgba(10,14,24,.96);border:1px solid rgba(167,139,250,.5);border-radius:999px;padding:9px 16px;color:#eef2f8;font:700 12px system-ui;box-shadow:0 6px 24px rgba(0,0,0,.4);display:flex;align-items:center;gap:12px";
+    document.body.appendChild(el); }
+  el.innerHTML=`✨ ${esc(label)} — <b>${done} / ${total}</b> <button class="back" style="margin:0" onclick="${stopExpr};this.textContent='Stopping…'">Stop</button>`;
+}
+function bookProgressDone(done,stopped,resumeFn,noun){
+  const el=document.getElementById("bookProgress"); if(!el) return;
+  resumeFn=resumeFn||"writeWholeBook"; noun=noun||"chapter";
+  el.innerHTML = stopped ? `Paused at ${done}. <button class="back" style="margin:0" onclick="${resumeFn}()">Resume</button> <button class="back" style="margin:0" onclick="this.parentElement.remove()">✕</button>`
+                         : `✓ Done — ${done} ${noun}${done===1?"":"s"}. <button class="back" style="margin:0" onclick="this.parentElement.remove()">✕</button>`;
+  if(!stopped) setTimeout(()=>{ const e=document.getElementById("bookProgress"); if(e) e.remove(); }, 7000);
+}
+/* ---- IMPROVE SUMMARIES: batched AI real-summaries + clean concepts ---- */
+let _improveRun={running:false,stop:false};
+async function improveBatch(batch){
+  const list=batch.map((c,i)=>`${i+1}. id=${c.id} | title: ${c.title} | opening: ${String(c.summary||"").slice(0,150).replace(/\s+/g," ")}`).join("\n");
+  const msg=`Here are ${batch.length} of my AI conversations (id, title, and my opening message). For EACH one, write a clear, engaging 1–2 sentence summary of what it was really about — readable and specific, never "the user asked" — and 3 to 5 clean topic tags (lowercase short noun phrases).\n\n${list}\n\nRespond with ONLY a JSON array, one object per conversation in the same order, exactly this shape:\n[{"id":"...","summary":"...","concepts":["tag","tag"]}]\nNo prose before or after. Do not invent facts beyond the title and opening.`;
+  const context="You are a careful editor turning raw AI-chat logs into a readable personal knowledge base. Faithful, specific, concise. Output valid JSON only — a single array.";
+  const reply=await chatLLM(msg, context);
+  if(!reply) return null;
+  try{ const m=String(reply).match(/\[[\s\S]*\]/); return m?JSON.parse(m[0]):null; }catch(e){ return null; }
+}
+async function improveAllSummaries(){
+  if(_improveRun.running || _narrAll.running) return;
+  if(!inkToken()) return;
+  const skip=Gate.pendingConvIds("summary");
+  const todo=(DB.conversations||[]).filter(c=>!c.aiSum && !skip.has(String(c.id)));
+  if(!todo.length){ if(Gate.pending("summary").length){ alert("These summaries are already waiting in Review — approve or reject them first."); go({name:"approvals"}); } return; }
+  const calls=Math.ceil(todo.length/12);
+  if(!confirm(`Have Inkling draft real summaries + clean tags for ${todo.length} conversation${todo.length===1?"":"s"}? It batches ~12 per AI call (~${calls} call${calls===1?"":"s"} on your API key). Nothing changes yet — each batch becomes a proposal you approve in Review. Stop anytime.`)) return;
+  _improveRun={running:true,stop:false};
+  const B=12; let done=0, proposed=0;
+  bookProgress(0, todo.length, "Drafting summaries", "_improveRun.stop=true");
+  for(let i=0;i<todo.length && !_improveRun.stop;i+=B){
+    const batch=todo.slice(i,i+B);
+    let res=null; try{ res=await improveBatch(batch); }catch(e){ res=null; }
+    const byId={}; (res||[]).forEach(r=>{ if(r&&r.id!=null) byId[String(r.id)]=r; });
+    const changes=[];
+    batch.forEach(c=>{ const r=byId[String(c.id)]; if(!r) return; const fields={};
+      if(r.summary) fields.summary={ from:c.summary||"", to:String(r.summary).slice(0,300) };
+      if(Array.isArray(r.concepts)&&r.concepts.length) fields.concepts={ from:c.concepts||[], to:r.concepts.map(x=>String(x).toLowerCase().trim()).filter(Boolean).slice(0,6) };
+      if(Object.keys(fields).length) changes.push({ target:{type:"conversation",id:c.id,label:c.title||"Untitled"}, fields }); });
+    if(changes.length){ const id=Gate.propose({ kind:"summary", agent:GATE_KINDS.summary.agent, title:`Summaries & tags · ${changes.length} conversation${changes.length===1?"":"s"}`,
+      explain:{ why:"Rewrote raw opening lines into clear 1–2 sentence summaries with clean topic tags, so your graph clusters correctly and your story reads well.",
+        confidence:0.7, evidence:[`${changes.length} conversation${changes.length===1?"":"s"} in this batch`],
+        alternatives:["Keep the raw opening text","Summarize only, no tags"],
+        risks:["AI can over-compress nuance — check the diffs. Originals are kept and every change is reversible."] } });
+      if(id) proposed++; done+=changes.length; }
+    bookProgress(Math.min(i+B,todo.length), todo.length, "Drafting summaries", "_improveRun.stop=true");
+    await new Promise(r=>setTimeout(r,400));
+  }
+  const stopped=_improveRun.stop; _improveRun={running:false,stop:false};
+  bookProgressDone(done, stopped, "improveAllSummaries", "summary");
+  if(proposed){ go({name:"approvals"}); }
+  else if(view.name==="imports") renderImports(); else if(view.name==="storybook") renderStorybook();
+}
+/* ---- AI EXTRACTION PASS: pull Questions / Realizations / Projects / People / Tech ---- */
+let _extractRun={running:false,stop:false};
+async function extractBatch(batch){
+  const list=batch.map((c,i)=>`### ${i+1}. id=${c.id} | title: ${c.title}\n${String(c.excerpt||c.summary||"").slice(0,1400)}`).join("\n\n");
+  const msg=`From each of my conversations below, extract structured elements. Return ONLY a JSON array — one object per conversation, in order:\n`+
+    `[{"id":"...","questions":["..."],"realizations":["..."],"projects":["..."],"people":["..."],"technologies":["..."]}]\n`+
+    `- questions: important questions I was asking (short)\n- realizations: turning points where my understanding changed, in my voice ("I realized…")\n- projects: named projects/products\n- people: real people discussed (names only)\n- technologies: languages, libraries, frameworks, hardware, tools\n`+
+    `Use [] when there are none. Do NOT invent — extract only what the text supports.\n\n${list}`;
+  const context="You extract structured knowledge from a person's AI-chat logs. Faithful, concise, grounded strictly in the text. Output valid JSON only — a single array.";
+  const reply=await chatLLM(msg, context);
+  if(!reply) return null;
+  try{ const m=String(reply).match(/\[[\s\S]*\]/); return m?JSON.parse(m[0]):null; }catch(e){ return null; }
+}
+async function extractAllNodes(){
+  if(_extractRun.running||_improveRun.running||_narrAll.running) return;
+  if(!inkToken()) return;
+  const todo=(DB.conversations||[]).filter(c=>!c.aiExtracted && (c.excerpt||c.summary));
+  if(!todo.length) return;
+  const calls=Math.ceil(todo.length/8);
+  if(!confirm(`Have Inkling extract questions, realizations, projects, people & technologies from ${todo.length} conversation${todo.length===1?"":"s"}? Batched ~8 per AI call (~${calls} on your API key). Stop anytime — done ones are saved.`)) return;
+  _extractRun={running:true,stop:false}; const B=8; let done=0;
+  const clean=(a,n)=>(Array.isArray(a)?a:[]).map(x=>String(x||"").trim()).filter(Boolean).slice(0,n);
+  bookProgress(0, todo.length, "Extracting nodes", "_extractRun.stop=true");
+  for(let i=0;i<todo.length && !_extractRun.stop;i+=B){
+    const batch=todo.slice(i,i+B); let res=null; try{ res=await extractBatch(batch); }catch(e){ res=null; }
+    const byId={}; (res||[]).forEach(r=>{ if(r&&r.id!=null) byId[String(r.id)]=r; });
+    batch.forEach(c=>{ const r=byId[String(c.id)]; if(r){ c.extract={
+      questions:clean(r.questions,5), realizations:clean(r.realizations,4),
+      projects:clean(r.projects,5), people:clean(r.people,6), technologies:clean(r.technologies,8) };
+      c.aiExtracted=true; done++; } });
+    persist(); bookProgress(done, todo.length, "Extracting nodes", "_extractRun.stop=true");
+    await new Promise(r=>setTimeout(r,400));
+  }
+  const stopped=_extractRun.stop; _extractRun={running:false,stop:false};
+  bookProgressDone(done, stopped, "extractAllNodes", "conversation");
+  if(view.name==="imports") renderImports(); else if(view.name==="graph") renderGraph();
+}
+/* ---- LABELED RELATIONSHIPS: name the connection between two ideas ---- */
+function edgeKey(a,b){ a=String(a).toLowerCase(); b=String(b).toLowerCase(); return a<b?a+""+b:b+""+a; }
+function edgeRel(a,b){ return (DB.edgeLabels||{})[edgeKey(a,b)]||null; }
+let _labelRun={running:false,stop:false};
+async function labelBatch(pairs){
+  const list=pairs.map((p,i)=>`${i+1}. "${p.a}"  →  "${p.b}"`).join("\n");
+  const msg=`For each pair of ideas from my knowledge graph, give the single best SHORT label for how the first relates to the second. Choose from: inspired, evolved into, depends on, part of, enables, contradicts, applies to, led to, related.\nReturn ONLY a JSON array in order: [{"a":"...","b":"...","rel":"..."}].\n\n${list}`;
+  const context="You label the relationship between a person's ideas. One short label per pair, chosen from the given set. Output valid JSON only — a single array.";
+  const reply=await chatLLM(msg, context); if(!reply) return null;
+  try{ const m=String(reply).match(/\[[\s\S]*\]/); return m?JSON.parse(m[0]):null; }catch(e){ return null; }
+}
+async function labelAllEdges(){
+  if(_labelRun.running||_extractRun.running||_improveRun.running||_narrAll.running) return;
+  if(!inkToken()) return;
+  const g=buildConceptGraph(); DB.edgeLabels=DB.edgeLabels||{};
+  const todo=g.edges.filter(e=>e.a&&e.b&&!DB.edgeLabels[edgeKey(e.a,e.b)]).slice(0,150);
+  if(!todo.length) return;
+  const calls=Math.ceil(todo.length/15);
+  if(!confirm(`Have Inkling label ${todo.length} relationship${todo.length===1?"":"s"} between your ideas (inspired, evolved into, depends on…)? ~${calls} AI call${calls===1?"":"s"} on your key. Stop anytime.`)) return;
+  _labelRun={running:true,stop:false}; const B=15; let processed=0;
+  bookProgress(0, todo.length, "Labeling relationships", "_labelRun.stop=true");
+  for(let i=0;i<todo.length && !_labelRun.stop;i+=B){
+    const batch=todo.slice(i,i+B); let res=null; try{ res=await labelBatch(batch.map(e=>({a:e.a,b:e.b}))); }catch(e){ res=null; }
+    (res||[]).forEach(r=>{ if(r&&r.a&&r.b&&r.rel) DB.edgeLabels[edgeKey(r.a,r.b)]=String(r.rel).toLowerCase().replace(/[^a-z ]/g,"").trim().slice(0,18); });
+    batch.forEach(e=>{ const k=edgeKey(e.a,e.b); if(!DB.edgeLabels[k]) DB.edgeLabels[k]="related"; });
+    processed=Math.min(i+B, todo.length); persist();
+    bookProgress(processed, todo.length, "Labeling relationships", "_labelRun.stop=true");
+    await new Promise(r=>setTimeout(r,400));
+  }
+  const stopped=_labelRun.stop; _labelRun={running:false,stop:false};
+  bookProgressDone(processed, stopped, "labelAllEdges", "relationship");
+  if(view.name==="graph") renderGraph(); else if(view.name==="imports") renderImports();
+}
+function chaptersToNarrate(book){ return book.chapters.filter(ch=>{ const n=narrEntry(ch.anchor); return !(n&&n.sig===ch.convs.length); }); }
+async function writeWholeBook(){
+  if(_narrAll.running) return;
+  if(!inkToken()){ renderStorybook(); return; }
+  const book=buildBook(); const todo=chaptersToNarrate(book);
+  if(!todo.length){ return; }
+  if(!confirm(`Have Inkling write ${todo.length} chapter${todo.length===1?"":"s"} in prose? It calls the AI once per chapter (uses your API key) and can take several minutes. You can Stop anytime — finished chapters are saved as it goes.`)) return;
+  const deepMap={}; deepenings().forEach(d=>deepMap[d.key]=d);
+  _narrAll={running:true, stop:false};
+  bookProgress(0, todo.length, "Writing your book", "_narrAll.stop=true");
+  let done=0;
+  for(const ch of todo){
+    if(_narrAll.stop) break;
+    _writingAnchor=ch.anchor; updateChapterDom(ch, deepMap);
+    let text=null; try{ text=await narrateChapter(ch); }catch(e){ text=null; }
+    _writingAnchor=null;
+    if(text){ saveNarr(ch.anchor,{ text, sig:ch.convs.length, at:Date.now() }); persist(); }
+    updateChapterDom(ch, deepMap);
+    done++; bookProgress(done, todo.length, "Writing your book", "_narrAll.stop=true");
+    await new Promise(r=>setTimeout(r, 500));
+  }
+  const stopped=_narrAll.stop; _narrAll={running:false,stop:false};
+  bookProgressDone(done, stopped, "writeWholeBook", "chapter");
+  const bar=document.getElementById("bookWriteBar"); if(bar) bar.outerHTML=coverWriteBar(buildBook());
+}
+function rewriteWholeBook(){
+  if(!confirm(`Rewrite every chapter in the ${GENRES[currentGenre()].label} voice? This replaces the current genre's narration.`)) return;
+  const g=currentGenre();
+  Object.keys(DB.narration||{}).forEach(a=>{ const e=DB.narration[a];
+    if(e&&typeof e.text==="string"){ if(g==="literary") delete DB.narration[a]; }
+    else if(e){ delete e[g]; } });
+  persist(); writeWholeBook();
+}
+function genrePicker(){
+  const cur=currentGenre();
+  const pills=Object.entries(GENRES).map(([id,g])=>
+    `<button onclick="setGenre('${id}')" style="cursor:pointer;border-radius:999px;padding:5px 12px;font:800 11px system-ui;border:1px solid ${id===cur?'rgba(167,139,250,.8)':'var(--line)'};background:${id===cur?'rgba(167,139,250,.22)':'transparent'};color:${id===cur?'#ddd6fe':'var(--dim)'}">${g.label}</button>`).join("");
+  return `<div style="margin:6px 0 4px"><div class="hint" style="margin:0 0 6px">Read your book as…</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center">${pills}</div></div>`;
+}
+function coverWriteBar(book){
+  if(!book.chapters.length) return `<div id="bookWriteBar"></div>`;
+  const todo=chaptersToNarrate(book).length;
+  const gLabel=GENRES[currentGenre()].label;
+  let action;
+  if(!inkToken()) action=`<span class="hint">✍️ Sign in on the main app + set an API key on Render to have Inkling write your book in prose.</span>`;
+  else if(!todo) action=`<span class="hint">✅ Written in ${gLabel}. </span><button class="back" onclick="rewriteWholeBook()">↻ Rewrite</button>`;
+  else action=`<button class="btn" style="font:800 12px system-ui" onclick="writeWholeBook()">✍️ Write the whole book in ${gLabel} — ${todo} chapter${todo===1?"":"s"}</button>`;
+  return `<div id="bookWriteBar" style="margin:4px 0 14px">${genrePicker()}<div style="text-align:center;margin-top:8px">${action}</div></div>`;
+}
+
+/* ---- THE LIBRARY: a browsable homepage of your life, by category ---- */
+const LIB_CATS=[
+  { id:"consciousness", name:"AI & Consciousness", emoji:"🧠", priority:true, kw:["consciousness","conscious","awareness","aware","sentient","sentience","coincidence","synchronicity","emergence","qualia","subjective","the mind","ai mind"] },
+  { id:"mind", name:"My Mind & Inner Experience", emoji:"🌌", priority:true, kw:["my mind","my thoughts","thought","dream","memory","feeling","perception","intuition","psyche","identity","inner","introspect"] },
+  { id:"spiritual", name:"Spiritual Reflections", emoji:"✨", priority:true, kw:["spiritual","spirit","god","soul","meditation","universe","faith","sacred","divine","enlighten","cosmic","meaning of life","existence"] },
+  { id:"growth", name:"Personal Growth", emoji:"🌱", kw:["growth","habit","discipline","motivation","self-improvement","routine","mindset","overcome","healing","purpose","reflection"] },
+  { id:"philosophy", name:"Technology Philosophy", emoji:"🤔", kw:["philosophy","ethics","implications","morality","humanity","society","future of","should we","meaning of technology"] },
+  { id:"inkling", name:"Inkling Development", emoji:"🌿", kw:["inkling"] },
+  { id:"worldweaver", name:"WorldWeaver & WordWeaver", emoji:"🕸️", kw:["worldweaver","wordweaver","weaver"] },
+  { id:"ee", name:"Electrical Engineering Journey", emoji:"⚡", kw:["electrical","circuit","voltage","transistor","electrician","electronics","resistor","current","mosfet","ohm"] },
+  { id:"code", name:"Programming & Software", emoji:"💻", kw:["python","javascript","programming","software","api","algorithm","backend","database","code","script"] },
+  { id:"chain", name:"Blockchain & Crypto", emoji:"🔗", kw:["solana","blockchain","smart contract","token","crypto","web3","nft","wallet"] },
+  { id:"ai", name:"AI & Machine Learning", emoji:"🤖", kw:["neural","machine learning","language model","llm","gpt","training","agent","embedding","gradient"] },
+  { id:"creative", name:"Creative Projects", emoji:"🎨", kw:["pixel prodigy","game","art","music","unity","3d","story","design","creative","render"] },
+  { id:"business", name:"Business Ideas", emoji:"💡", kw:["business","startup","monetize","revenue","product","market","customer","pitch","saas","entrepreneur"] },
+  { id:"future", name:"Future Vision", emoji:"🔮", kw:["future","vision","roadmap","long term","someday","10 year","ambition"] },
+  { id:"science", name:"Science & the Cosmos", emoji:"🔭", kw:["quantum","physics","energy","cosmic","light","space","astronomy","relativity"] },
+];
+const LIB_OTHER={ id:"other", name:"Other Explorations", emoji:"📂" };
+function libCatOf(ch){
+  const title=(ch.anchor+" "+ch.title).toLowerCase();
+  const body=((ch.threads||[]).join(" ")+" "+ch.convs.map(c=>c.title+" "+(c.summary||"")).join(" ")).toLowerCase();
+  let best="other", score=0.9;
+  LIB_CATS.forEach(cat=>{ let s=0;
+    cat.kw.forEach(k=>{ if(title.includes(k)) s+=3; else if(body.includes(k)) s+=1; });
+    if(cat.priority&&s>0) s+=0.6;
+    if(s>score){ score=s; best=cat.id; } });
+  return best;
+}
+function chapterEmoji(ch){ const c=LIB_CATS.find(x=>x.id===libCatOf(ch)); return c?c.emoji:LIB_OTHER.emoji; }
+function readingTime(ch){ const m=ch.convs.reduce((s,c)=>s+(c.messageCount||4),0); return Math.max(2, Math.min(45, Math.round(m*0.5))); }
+function chapterTeaser(ch){
+  const c=ch.convs.slice().sort((a,b)=>(b.messageCount||0)-(a.messageCount||0))[0];
+  let s=(c&&c.summary)||("Exploring "+ch.title+" across "+ch.convs.length+" conversations.");
+  s=String(s).split(". ")[0].replace(/\.$/,""); return s.length>150?s.slice(0,150)+"…":s;
+}
+function currentStoryView(){ return DB.storyView==="read" ? "read" : "library"; }
+function setStoryView(v){ DB.storyView=(v==="read"?"read":"library"); persist(); renderStorybook(); }
+function storyViewToggle(){
+  const v=currentStoryView();
+  const pill=(id,label)=>`<button onclick="setStoryView('${id}')" style="cursor:pointer;border-radius:999px;padding:5px 13px;font:800 11px system-ui;border:1px solid ${id===v?'rgba(167,139,250,.8)':'var(--line)'};background:${id===v?'rgba(167,139,250,.2)':'transparent'};color:${id===v?'#ddd6fe':'var(--dim)'}">${label}</button>`;
+  return `<div style="display:flex;gap:6px;justify-content:center;margin:2px 0 10px">${pill('library','📚 Library')}${pill('read','📖 Read straight through')}</div>`;
+}
+function openChapterFromLibrary(n){ _bookScrollCh=n; DB.storyView="read"; persist(); renderStorybook(); }
+function storyCard(ch, emoji){
+  return `<button onclick="openChapterFromLibrary(${ch.n})" style="text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 13px;cursor:pointer;display:flex;flex-direction:column;gap:6px;min-height:118px">
+    <div style="font-size:22px;line-height:1">${emoji}</div>
+    <div style="font:800 14px system-ui;color:#eef2f8;line-height:1.25">${esc(ch.title)}</div>
+    <div style="font:400 12.5px/1.5 system-ui;color:var(--dim);flex:1">${esc(chapterTeaser(ch))}</div>
+    <div style="font:700 11px system-ui;color:var(--violet)">⏱ ${readingTime(ch)} min · ${ch.convs.length} conversation${ch.convs.length===1?"":"s"}</div>
+  </button>`;
+}
+function renderLibrary(book){
+  const cats={}; LIB_CATS.concat([LIB_OTHER]).forEach(c=>cats[c.id]={ ...c, chapters:[] });
+  book.chapters.forEach(ch=>{ cats[libCatOf(ch)].chapters.push(ch); });
+  const order=LIB_CATS.map(c=>c.id).concat(["other"]);
+  const shown=order.map(id=>cats[id]).filter(c=>c.chapters.length);
+  const sections=shown.map(c=>{
+    const cards=c.chapters.slice().sort((a,b)=>b.convs.length-a.convs.length).map(ch=>storyCard(ch,c.emoji)).join("");
+    return `<div style="margin:28px 0 8px"><h2 style="font:800 17px system-ui;margin:0;color:#eef2f8">${c.emoji} ${esc(c.name)} <span style="color:var(--dim);font-weight:700;font-size:12px">· ${c.chapters.length}</span></h2></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:10px">${cards}</div>`;
+  }).join("");
+  app.innerHTML=chrome(
+    `${storyViewToggle()}
+     <div style="text-align:center;margin:4px 0 6px">
+       <div style="font:800 11px system-ui;color:var(--violet);letter-spacing:.15em;text-transform:uppercase">A digital library of your life</div>
+       <h1 style="font:800 28px/1.15 Georgia,serif;margin:8px 0 0">The Story of Your Understanding</h1></div>
+     <p class="sub" style="text-align:center;max-width:660px;margin:10px auto 4px">${book.total} conversations · ${book.chapters.length} chapters across ${shown.length} categories · ${fmtSpan(book.span[0],book.span[1])}. Browse by category, or open any story to read it.</p>
+     ${groupModeToggle()}
+     ${sections}
+     <div class="hint" style="margin-top:24px;text-align:center">Tap a story to read it. Switch to <b>📖 Read straight through</b> for the whole book, cover to cover.</div>`, "storybook");
+  window.scrollTo(0,0);
+}
+
+// The whole book, read straight through — cover, then every chapter in sequence.
 function renderStorybook(){
-  const convs=(DB.conversations||[]).slice().sort((a,b)=>a.at-b.at);
-  if(!convs.length){
+  const book=buildBook();
+  if(!book.total){
     app.innerHTML=chrome(`<h1>📖 Your story so far</h1>
-      <div class="empty">Your story hasn't started yet.<br><span style="opacity:.8">Import a few conversations and Save them — Inkling weaves them into chapters here.</span></div>`, "storybook");
+      <div class="empty">Your book hasn't started yet.<br><span style="opacity:.8">Import your ChatGPT history (📥 Imports) — Inkling writes it into chapters here.</span></div>`, "storybook");
     return;
   }
-  const clusters=clusterConvs(convs);
-  const cc={}; convs.forEach(c=>(c.concepts||[]).forEach(x=>{ cc[x]=(cc[x]||0)+1; }));
-  const recurring=Object.keys(cc).filter(k=>cc[k]>=2).sort((a,b)=>cc[b]-cc[a]).slice(0,5);
-  const providers=[...new Set(convs.map(c=>c.provider))];
-  const intro = `Since ${fmtDate(convs[0].at)}, you've brought ${convs.length} conversation${convs.length>1?"s":""} into Inkling`+
-    (providers.length?` from ${providers.join(", ")}`:"")+`. Read together, they trace what you've been turning over.`+
-    (recurring.length?` The ideas you keep returning to: <b>${recurring.map(esc).join(", ")}</b>.`:"");
-
-  const chapters=clusters.map((cl,i)=>{
-    const titles=cl.members.map(c=>c.title);
-    let p=`You explored <b>${esc(cl.theme)}</b> across ${cl.members.length} conversation${cl.members.length>1?"s":""} — ${titles.map(esc).join(", ")}.`;
-    if(cl.shared.length>1) p+=` The thread running through them: ${esc(cl.shared.slice(0,4).join(", "))}.`;
-    const withSummary=cl.members.find(c=>c.summary);
-    if(withSummary && withSummary.summary) p+=` <span style="color:var(--dim)">${esc(withSummary.summary)}</span>`;
-    const list=cl.members.map(c=>`<button class="qrow" style="margin:0 0 6px" onclick="openConvInGalaxy('${c.id}')"><span class="dot done"></span><span class="qt">${esc(c.title)}</span></button>`).join("");
-    return `<div class="panel"><h3 style="font:800 12px system-ui;color:var(--violet);margin:0 0 8px;text-transform:uppercase;letter-spacing:.04em">Chapter ${i+1} · ${esc(cl.theme)}</h3>
-      <p style="line-height:1.75;color:#dbe4ee;margin:0 0 8px">${p}</p>${list}</div>`;
-  }).join("");
-
-  const closing = clusters.length>1
-    ? `<div class="panel"><p style="line-height:1.75;color:#dbe4ee;margin:0">From <b>${esc(clusters[0].theme)}</b> to <b>${esc(clusters[clusters.length-1].theme)}</b>, your curiosity has spanned ${clusters.length} territories — and Inkling is watching the threads between them grow.</p></div>` : "";
-
+  if(currentStoryView()==="library") return renderLibrary(book);
+  const nCh=book.chapters.length;
+  const deepMap={}; deepenings().forEach(d=>deepMap[d.key]=d);
+  const nParts=book.parts.length;
+  const prologue=`This is the story of your understanding — <b>${book.total} conversation${book.total===1?"":"s"}</b> spanning <b>${fmtSpan(book.span[0],book.span[1])}</b>, read as one continuous book: <b>${nCh} chapter${nCh===1?"":"s"}</b> across <b>${nParts} part${nParts===1?"":"s"}</b>${book.brief.length?` plus ${book.brief.length} brief threads`:""}. Just keep scrolling — related themes are gathered into parts, and within each, the chapters run in the order they first appeared in your life.`;
+  const partHeader=(p)=>`<div id="part-${p.id}" style="text-align:center;margin:56px 0 4px;scroll-margin-top:16px">
+      <div style="font:800 12px system-ui;color:#9ecbff;letter-spacing:.22em;text-transform:uppercase">Part · ${esc(p.name)}</div>
+      <div style="width:80px;height:1px;background:rgba(158,203,255,.5);margin:12px auto 0"></div>
+      <div class="hint" style="margin:8px 0 0">${p.chapters.length} chapter${p.chapters.length===1?"":"s"}</div></div>`;
+  const chapters=book.parts.map(p=>partHeader(p)+p.chapters.map(ch=>bookChapter(ch, deepMap)).join("")).join("");
+  const toc=book.parts.map(p=>
+    `<a onclick="document.getElementById('part-${p.id}').scrollIntoView({behavior:'smooth'})" style="cursor:pointer;color:#9ecbff;font-weight:800;display:block;padding:8px 0 3px;font-size:12px;letter-spacing:.05em;text-transform:uppercase">${esc(p.name)}</a>`+
+    p.chapters.map(ch=>`<a onclick="document.getElementById('ch${ch.n}').scrollIntoView({behavior:'smooth'})" style="cursor:pointer;color:var(--blue);display:block;padding:2px 0 2px 12px;font-size:13px">${ch.n}. ${esc(ch.title)} <span style="color:var(--dim)">· ${ch.convs.length}</span></a>`).join("")
+  ).join("");
+  const brief=book.brief.length?`<section id="brief" style="margin:46px 0 0">
+      <div style="text-align:center;margin:40px 0 18px">
+        <div style="font:800 11px system-ui;color:var(--violet);letter-spacing:.18em;text-transform:uppercase">Appendix</div>
+        <h2 style="font:800 27px/1.2 Georgia,serif;margin:8px 0 0;color:#f3f6fc">Brief threads</h2>
+        <div style="width:44px;height:2px;background:rgba(167,139,250,.5);margin:14px auto 0"></div></div>
+      <p style="font:400 16px/1.9 Georgia,serif;color:#eaeff7;margin:0 0 12px">${book.brief.length} conversations that stand on their own — one-off questions and quick detours that haven't yet grown into a chapter.</p>
+      ${book.brief.map(bookEntry).join("")}</section>`:"";
   app.innerHTML=chrome(
-    `<h1>📖 Your story so far</h1>
-     <p class="sub">Your imported conversations, read as a book — chapters by theme, written from what you brought in.</p>
-     <div class="panel" style="border-color:rgba(167,139,250,.35)"><p style="font:600 15px/1.75 system-ui;color:#e6edf3;margin:0">${intro}</p></div>
-     ${chapters}${closing}
-     <div class="hint">A living story — it grows and re-chapters itself every time you import.</div>`, "storybook");
+    `${storyViewToggle()}
+     <div style="text-align:center;margin:6px 0 4px">
+       <div style="font:800 11px system-ui;color:var(--violet);letter-spacing:.15em;text-transform:uppercase">An evolving autobiography</div>
+       <h1 style="font:800 30px/1.15 Georgia,serif;margin:8px 0 0">The Story of Your Understanding</h1></div>
+     <p style="font:400 16.5px/1.95 Georgia,serif;color:#eaeff7;margin:16px auto 14px;text-align:center;max-width:640px">${prologue}</p>
+     ${groupModeToggle()}
+     ${coverWriteBar(book)}
+     <details style="margin:0 0 8px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:10px 0">
+       <summary style="cursor:pointer;color:var(--dim);font:700 12px system-ui">Table of contents — ${nCh} chapters (tap a title to jump)</summary>
+       <div style="margin-top:10px;max-height:42vh;overflow:auto">${toc}${book.brief.length?`<a onclick="document.getElementById('brief').scrollIntoView({behavior:'smooth'})" style="cursor:pointer;color:var(--blue);display:block;padding:2px 0;font-size:13px">✦ Brief threads · ${book.brief.length}</a>`:""}</div>
+     </details>
+     ${chapters}
+     ${brief}
+     <div style="text-align:center;margin:46px 0 12px"><div style="width:60px;height:1px;background:var(--line);margin:0 auto 12px"></div>
+       <p class="hint" style="margin:0">The end — for now. Your book keeps writing itself as you explore.</p></div>`, "storybook");
+  if(_bookScrollCh){ const el=document.getElementById("ch"+_bookScrollCh); if(el) el.scrollIntoView(); _bookScrollCh=null; }
+  else window.scrollTo(0,0);
 }
 
 // Persist the pending import as a conversation node (a future galaxy "star").
@@ -764,11 +1648,265 @@ function renderImportChooser(data){
      <div style="text-align:center;margin-top:12px"><button class="back" onclick="go({name:'dashboard'})">Not now</button></div>`, "");
 }
 
+/* ---- YOUR JOURNEY WITH CLAUDE: real learning curves from building Inkling ----
+   Authored from our actual collaboration (reconstructed, not verbatim logs) so the
+   map has real substance. Each is a moment your understanding moved. Same shape as
+   an import → flows into Galaxy, Story, AND the City (which reads this same store). */
+const JD = 864e5;
+const JOURNEY_SEED = [
+  { id:"jr_charge", title:"What electric current actually is", at:Date.now()-170*JD,
+    summary:"You pushed on an assumption — that current means electrons racing to the bulb. We separated three things: electrons drift at millimeters per second, the electric field propagates near light speed, and energy rides the field. That's why the light turns on 'instantly' even though the electrons barely move.",
+    concepts:["electric charge","electron","current","drift velocity","electric field","voltage","energy transfer"],
+    digest:[{role:"user",text:"If I flip a switch, are electrons flying to the bulb at light speed?"},{role:"assistant",text:"No — the electrons drift at millimeters per second. What moves near light speed is the electric field. The field is the messenger; the electrons are the crowd it nudges."},{role:"user",text:"So voltage is the push, and current is how many actually move past a point?"}],
+    provenance:{ "drift velocity":[{i:1,role:"assistant",snippet:"the electrons drift at millimeters per second — what moves near light speed is the electric field"}], "electric field":[{i:1,role:"assistant",snippet:"The field is the messenger; the electrons are the crowd it nudges"}] }, messageCount:12 },
+
+  { id:"jr_transistor_switch", title:"Transistors aren't really just switches", at:Date.now()-150*JD,
+    summary:"You started with 'a transistor is a switch.' We kept going until the switch dissolved into physics: a voltage on the gate builds an electric field, the field pulls a channel of charge into existence in doped silicon, and current flows. The switch was a useful lie that hid the field.",
+    concepts:["transistor","switch","gate voltage","electric field","semiconductor","doping","channel","abstraction"],
+    digest:[{role:"user",text:"Isn't a transistor basically just a switch?"},{role:"assistant",text:"That's the useful lie. Underneath, a voltage on the gate makes an electric field, and the field conjures a conducting channel in doped silicon. 'Switch' is the abstraction that lets you forget the field once you trust it."},{role:"user",text:"So the abstraction is hiding the interesting part."}],
+    provenance:{ "abstraction":[{i:1,role:"assistant",snippet:"'Switch' is the abstraction that lets you forget the field once you trust it"}], "doping":[{i:1,role:"assistant",snippet:"the field conjures a conducting channel in doped silicon"}] }, messageCount:15 },
+
+  { id:"jr_mosfet", title:"From one MOSFET gate up to a CPU", at:Date.now()-148*JD,
+    summary:"We climbed the ladder from device to computation: one gate is a switch, millions of gates become logic, logic becomes binary arithmetic, binary becomes a CPU. You saw abstraction as the thing that lets you stop thinking about the field once you trust it — and how a relay does the same job clumsily.",
+    concepts:["mosfet","logic gate","cpu","abstraction","binary","transistor"],
+    digest:[{role:"user",text:"How does one tiny transistor become a computer?"},{role:"assistant",text:"Stack the abstraction: gate → logic gate → binary arithmetic → CPU. Each layer forgets the one below. A relay could do it too — just enormous, slow, and loud."}],
+    provenance:{ "cpu":[{i:1,role:"assistant",snippet:"gate → logic gate → binary arithmetic → CPU. Each layer forgets the one below"}] }, messageCount:11 },
+
+  { id:"jr_circuits", title:"Ohm's law and what resistance really is", at:Date.now()-140*JD,
+    summary:"Resistance stopped being a number and became a picture: how hard the atomic lattice pushes back on drifting charge. V = IR tied the three together — push (voltage), flow (current), and friction (resistance) — so changing one tells you what the others must do.",
+    concepts:["resistance","ohm's law","ampere","current","conductor","voltage"],
+    digest:[{role:"user",text:"What is resistance, physically?"},{role:"assistant",text:"How hard the material's lattice resists the drifting charge. V=IR just says: for a given push, more friction means less flow."}], messageCount:8 },
+
+  { id:"jr_precalc", title:"Functions: domain, range, and mapping", at:Date.now()-120*JD,
+    summary:"A function became a machine: it maps each allowed input to exactly one output. Domain is the set of inputs it's allowed to eat; range is what comes out. Naming that made graphs stop being decoration and start being the behavior of the machine.",
+    concepts:["function","domain","range","mapping","variable","relationship"],
+    digest:[{role:"user",text:"Why does domain vs range matter?"},{role:"assistant",text:"A function is a machine that maps inputs to outputs. Domain = what it's allowed to eat; range = what it can produce. The graph is just a portrait of that mapping."}], messageCount:9 },
+
+  { id:"jr_nn", title:"How a neural network learns", at:Date.now()-110*JD,
+    summary:"The weights are the memory. Learning is nothing mystical — it's nudging weights so the network's prediction lands closer to the truth, measured as error. Once 'learning = shrinking error by adjusting weights' clicked, the rest was mechanism.",
+    concepts:["neural network","weights","training data","activation","error","prediction"],
+    digest:[{role:"user",text:"What actually changes when a network 'learns'?"},{role:"assistant",text:"The weights. They're the memory. Training nudges them so the prediction gets closer to the answer — 'learning' is just shrinking the error."}],
+    provenance:{ "weights":[{i:1,role:"assistant",snippet:"The weights. They're the memory. Training nudges them so the prediction gets closer to the answer"}] }, messageCount:13 },
+
+  { id:"jr_gradient", title:"Gradient descent, intuitively", at:Date.now()-108*JD,
+    summary:"You reframed training as walking downhill on an error surface in the dark. The derivative is the slope under your feet — it tells you which way is down and how steep. Gradient descent is just: feel the slope, step downhill, repeat. That's when the AI and math districts joined for you.",
+    concepts:["gradient","optimization","derivative","error","rate of change","learning rate"],
+    digest:[{role:"user",text:"Gradient descent sounds like calculus I don't have yet."},{role:"assistant",text:"It's simpler than it sounds: the derivative is the slope under your feet. Feel which way is downhill, take a step, repeat until the ground is flat."}], messageCount:10 },
+
+  { id:"jr_psych", title:"How psychology tests an idea", at:Date.now()-75*JD,
+    summary:"Research methods turned a vague question into something testable: operationalize it into variables, hold confounds still with a control group, and let the evidence — not the story you wanted — decide. It's the same discipline as grounding a concept in its source.",
+    concepts:["experiment","variable","research methods","evidence","hypothesis","control group"],
+    digest:[{role:"user",text:"How do psychologists actually test something so fuzzy?"},{role:"assistant",text:"Turn the fuzzy question into variables you can measure, control everything else, and let the evidence rule — even when it disagrees with you."}], messageCount:11 },
+
+  { id:"jr_graph", title:"Inkling is a graph, not a flashcard app", at:Date.now()-90*JD,
+    summary:"The turning point in how you think about Inkling: stop counting cards, start counting edges. A concept only means something through what it connects to. You decided success is the density of connections — that one idea reorganized the whole project.",
+    concepts:["knowledge graph","node","edge","connection","abstraction","relationship"],
+    digest:[{role:"user",text:"Maybe Inkling shouldn't be a flashcard app at all."},{role:"assistant",text:"Right — the value isn't the cards, it's the edges. A concept means something only through what it connects to. Measure Inkling by connections, not counts."},{role:"user",text:"Then edges are the product."}],
+    provenance:{ "edge":[{i:1,role:"assistant",snippet:"the value isn't the cards, it's the edges. A concept means something only through what it connects to"}], "knowledge graph":[{i:2,role:"user",snippet:"Then edges are the product"}] }, messageCount:14 },
+
+  { id:"jr_threejs", title:"Building a 3D city from data", at:Date.now()-60*JD,
+    summary:"Nothing in the city is hand-placed. It's a pure function of the knowledge graph: buildings, heights, and windows all fall out of the data. Instancing was the trick that let it scale — draw thousands of the same shape in one call.",
+    concepts:["three.js","procedural generation","instancing","mesh","3d","knowledge graph"],
+    digest:[{role:"user",text:"Can the city just build itself from my graph?"},{role:"assistant",text:"That's the whole idea — nothing placed by hand. The generator reads the graph and the buildings fall out. Instancing keeps it fast enough to scale."}], messageCount:12 },
+
+  { id:"jr_extension", title:"Why the browser extension kept breaking", at:Date.now()-45*JD,
+    summary:"A real wall: the Import button stayed greyed out and nothing worked. The cause was invisible — ChatGPT's Content-Security-Policy blocked the dynamic imports the extension used. We rebuilt it as classic content scripts in an isolated world. The lesson that stuck: the browser's security model is a set of walls you only learn by hitting them.",
+    concepts:["content script","csp","manifest v3","permission","abstraction"],
+    digest:[{role:"user",text:"It's not importing — the button is greyed out."},{role:"assistant",text:"The page's Content-Security-Policy is blocking our dynamic imports — invisible from the outside. Switching to classic content scripts in an isolated world gets us around the wall."}],
+    provenance:{ "csp":[{i:1,role:"assistant",snippet:"The page's Content-Security-Policy is blocking our dynamic imports — invisible from the outside"}] }, messageCount:16 },
+
+  { id:"jr_provenance", title:"Grounding every idea in its source", at:Date.now()-30*JD,
+    summary:"The principle that now runs through Inkling: every concept must point back to the sentence that earned it. Understanding you can't trace to a source isn't yet yours — it's borrowed. That's why each window in the city opens a real snippet.",
+    concepts:["provenance","evidence","grounding","source","understanding"],
+    digest:[{role:"user",text:"How do I know the summary isn't just making things up?"},{role:"assistant",text:"Every concept links back to the exact sentence it came from. If it can't be traced to something you actually said or read, it doesn't count as understood."}],
+    provenance:{ "provenance":[{i:1,role:"assistant",snippet:"Every concept links back to the exact sentence it came from"}] }, messageCount:9 }
+];
+function journeyRemaining(){
+  const have=new Set((DB.conversations||[]).map(c=>c.id));
+  return JOURNEY_SEED.filter(s=>!have.has(s.id)).length;
+}
+function importJourney(){
+  const have=new Set((DB.conversations||[]).map(c=>c.id));
+  let added=0;
+  JOURNEY_SEED.forEach(seed=>{
+    if(have.has(seed.id)) return;
+    DB.conversations.push(Object.assign({ provider:"claude", relations:[], quiz:null, messages:null }, seed));
+    added++;
+  });
+  DB.conversations.sort((a,b)=>b.at-a.at);
+  persist();
+  go({name:"galaxy"});
+}
+
+/* ---- BULK IMPORT: your ChatGPT export (conversations-*.json), parsed locally ----
+   Nothing leaves the browser. We keep only compact records (title, concepts,
+   summary, date) — never full message text — so 900+ chats fit in localStorage. */
+const CG_STOP=new Set("the a an and or but if then else of to in on for with as at by from into about over under is are was were be been being do does did will would can could should may might must have has had this that these those it its i you he she they we me my your our their his her them us not no yes so just really very much many more most some any all cant dont didnt im youre lets what which who whom whose when where why how get got make made want need know think see say said tell told use used using like also thanks thank please okay sure yeah yep nope hey hi hello chatgpt gpt able way ways thing things stuff lot lots one two three first second next new good great best better help kind sort right left going go come came take took give gave put set find found feel felt look looked here there now today etc via per vs let create creating created build building built work working works given show shows based needs add added following below above example examples note step steps section part parts full".split(" "));
+const CG_NOISE=new Set("http https www com net org html css json xml sql termux aarch64 sudo apt npm npx node cd mkdir chmod git cli bash sh cmd pkg pip run script log error null undefined const var function return true false def print import export div span src href png jpg svg amp lt gt nbsp quot code file files line lines output input value values type types name names usr lib bin out".split(" "));
+const CG_GENERIC=new Set("app website project system page setup request conversation design guide idea ideas concept home environment portfolio platform platforms feature features version update question answer response overview explanation exploration thing user users data process method approach content result results option options info detail details".split(" "));
+function cgStrip(s){ return String(s||"").replace(/```[\s\S]*?```/g," ").replace(/`[^`]*`/g," ").replace(/https?:\/\/\S+/g," ").replace(/^[#>*\-\s]+/gm," ").replace(/[*_#>|~]+/g," "); }
+function cgClean(s){ return cgStrip(s).toLowerCase().replace(/[^a-z0-9+\s-]/g," ").replace(/\s+/g," ").trim(); }
+function cgBase(w){ return /[a-z]/.test(w)&&/^[a-z][a-z0-9+-]*[a-z0-9]$/.test(w)&&w.length>=3&&w.length<=22&&!CG_STOP.has(w)&&!CG_NOISE.has(w); }
+function cgTok(s){ return cgClean(s).split(" ").filter(cgBase); }
+function cgMessages(c){
+  const msgs=[];
+  for(const nd of Object.values(c.mapping||{})){ const m=nd.message; if(!m||!m.content||m.content.content_type!=="text")continue;
+    const role=m.author&&m.author.role; if(role!=="user"&&role!=="assistant")continue;
+    const t=(m.content.parts||[]).filter(p=>typeof p==="string").join(" ").trim(); if(!t)continue;
+    msgs.push({ role, t, ct:m.create_time||0 }); }
+  msgs.sort((a,b)=>a.ct-b.ct);
+  return msgs;
+}
+// A richer excerpt of the actual back-and-forth (kept local; ~2k chars) so the AI
+// passes have real material — not just the first message.
+function cgExcerpt(msgs){
+  const out=[]; let len=0;
+  for(const m of msgs){ if(len>1900) break; const line=(m.role==="user"?"Me: ":"AI: ")+m.t.replace(/\s+/g," ").slice(0,340); out.push(line); len+=line.length+1; }
+  return out.join("\n").slice(0,2100);
+}
+function cgConvText(c){
+  const msgs=cgMessages(c); let user=[], asst=[], first="";
+  msgs.forEach(m=>{ if(m.role==="user"){ user.push(m.t); if(!first) first=m.t; } else asst.push(m.t); });
+  return { user:user.join("\n").slice(0,14000), asst:asst.join("\n").slice(0,16000), first, n:msgs.length, msgs };
+}
+function cgTopTerms(text){ const w=cgTok(text); const uni={}, bi={};
+  for(let i=0;i<w.length;i++){ if(!CG_GENERIC.has(w[i])) uni[w[i]]=(uni[w[i]]||0)+1;
+    if(i+1<w.length && w[i]!==w[i+1]) bi[w[i]+" "+w[i+1]]=(bi[w[i]+" "+w[i+1]]||0)+1; }
+  return { biTop:Object.entries(bi).filter(([k,v])=>v>=2).sort((a,b)=>b[1]-a[1]).map(x=>x[0]),
+           uniTop:Object.entries(uni).filter(([k,v])=>v>=2).sort((a,b)=>b[1]-a[1]).map(x=>x[0]) }; }
+function cgConcepts(c, txt){ const weighted=(txt.user+"\n").repeat(3)+txt.asst; const {biTop,uniTop}=cgTopTerms(weighted);
+  const tc=cgTok(c.title).filter(w=>!CG_GENERIC.has(w)); const tp=tc.slice(0,4).join(" ");
+  const out=[], seen=new Set(); const add=t=>{ t=String(t||"").trim(); if(!t||t.split(" ").length>4||seen.has(t))return; seen.add(t); out.push(t); };
+  biTop.slice(0,3).forEach(add); if(tp && tp.split(" ").length>=2) add(tp); tc.forEach(add);
+  uniTop.forEach(t=>{ if(out.length<6) add(t); });
+  return out.slice(0,6);
+}
+function cgRecord(c){
+  const txt=cgConvText(c); const concepts=cgConcepts(c, txt);
+  const at=Math.round(((c.create_time||c.update_time|| (Date.now()/1000)))*1000);
+  return { id: c.conversation_id||c.id||("cg"+at+Math.random().toString(36).slice(2,6)),
+    title: (c.title&&c.title.trim())||"Untitled conversation", provider:"chatgpt",
+    summary: (txt.first||"").replace(/\s+/g," ").slice(0,180),
+    excerpt: cgExcerpt(txt.msgs),
+    concepts, messageCount: txt.n, at,
+    provenance:null, messages:null, digest:null, quiz:null, relations:[] };
+}
+const cgReadText=f=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(r.error); r.readAsText(f); });
+function cgStatus(msg){ const el=document.getElementById("cgStatus"); if(el) el.innerHTML=msg; }
+// Minimal in-browser ZIP reader (reads the central directory; inflates DEFLATE via
+// the native DecompressionStream). Lets you pick the export .zip directly.
+async function cgZipEntries(file){
+  const buf=new Uint8Array(await file.arrayBuffer());
+  const dv=new DataView(buf.buffer);
+  let eocd=-1;
+  for(let i=buf.length-22; i>=Math.max(0,buf.length-65557); i--){ if(dv.getUint32(i,true)===0x06054b50){ eocd=i; break; } }
+  if(eocd<0) throw new Error("no EOCD");
+  const cdOffset=dv.getUint32(eocd+16,true), cdCount=dv.getUint16(eocd+10,true);
+  const entries=[]; let p=cdOffset;
+  for(let n=0;n<cdCount;n++){
+    if(dv.getUint32(p,true)!==0x02014b50) break;
+    const method=dv.getUint16(p+10,true), compSize=dv.getUint32(p+20,true);
+    const nameLen=dv.getUint16(p+28,true), extraLen=dv.getUint16(p+30,true), commentLen=dv.getUint16(p+32,true);
+    const lho=dv.getUint32(p+42,true);
+    const name=new TextDecoder().decode(buf.subarray(p+46,p+46+nameLen));
+    entries.push({ name, method, compSize, lho });
+    p+=46+nameLen+extraLen+commentLen;
+  }
+  return { buf, dv, entries };
+}
+async function cgEntryText(buf, dv, e){
+  if(dv.getUint32(e.lho,true)!==0x04034b50) throw new Error("bad local header");
+  const nameLen=dv.getUint16(e.lho+26,true), extraLen=dv.getUint16(e.lho+28,true);
+  const start=e.lho+30+nameLen+extraLen;
+  const data=buf.subarray(start, start+e.compSize);
+  if(e.method===0) return new TextDecoder().decode(data);
+  const ds=new DecompressionStream("deflate-raw");
+  const ab=await new Response(new Blob([data]).stream().pipeThrough(ds)).arrayBuffer();
+  return new TextDecoder().decode(ab);
+}
+async function importChatGPT(fileList){
+  const files=[...fileList]; const sources=[]; // {name, get:()=>Promise<string>}
+  for(const f of files){
+    if(/\.zip$/i.test(f.name)){
+      if(typeof DecompressionStream==="undefined"){ cgStatus("⚠ This browser can't open the .zip in-page — unzip it first (right-click → Extract All), then pick the <b>conversations-*.json</b> files."); return; }
+      cgStatus(`Opening ${esc(f.name)}…`); await new Promise(r=>setTimeout(r,10));
+      let z; try{ z=await cgZipEntries(f); }catch(err){ cgStatus("⚠ Couldn't read that .zip. Try unzipping it and picking the conversations-*.json files."); return; }
+      z.entries.filter(e=>/(^|\/)conversations(-\d+)?\.json$/i.test(e.name)).forEach(e=>sources.push({ name:e.name, get:()=>cgEntryText(z.buf,z.dv,e) }));
+    } else if(/\.json$/i.test(f.name)){
+      sources.push({ name:f.name, get:()=>cgReadText(f) });
+    }
+  }
+  if(!sources.length){ cgStatus("No conversations found — pick your <b>chatgptconvo.zip</b> (or the <b>conversations-*.json</b> files inside it)."); return; }
+  DB.conversations=DB.conversations||[];
+  const byId={}; DB.conversations.forEach(c=>byId[c.id]=c); let added=0, updated=0, scanned=0;
+  for(let i=0;i<sources.length;i++){
+    cgStatus(`Reading ${i+1}/${sources.length} — ${esc(sources[i].name)}… <span style="color:var(--dim)">${added} new · ${updated} refreshed</span>`);
+    await new Promise(r=>setTimeout(r,10));
+    let arr; try{ arr=JSON.parse(await sources[i].get()); }catch(e){ continue; }
+    if(!Array.isArray(arr)) arr=[arr];
+    for(const c of arr){ if(!c||!c.mapping)continue; scanned++;
+      const rec=cgRecord(c); const ex=byId[rec.id];
+      if(ex){ // re-import: refresh the excerpt + message count; keep AI-improved summary/concepts
+        ex.excerpt=rec.excerpt; ex.messageCount=rec.messageCount;
+        if(!ex.aiSum){ ex.summary=rec.summary; ex.concepts=rec.concepts; }
+        updated++;
+      } else { byId[rec.id]=rec; DB.conversations.push(rec); added++; }
+    }
+    arr=null;
+  }
+  DB.conversations.sort((a,b)=>b.at-a.at);
+  try{ persist(); }catch(e){ cgStatus("⚠ Storage got full — imported what fit."); }
+  cgStatus(`✅ ${added} new · ${updated} refreshed with fuller text (${scanned} scanned). Opening your library…`);
+  DB.storyView="library"; try{ persist(); }catch(e){}
+  setTimeout(()=>go({name:"storybook"}), 900);
+}
+function triggerChatGPTImport(){ const el=document.getElementById("cgFile"); if(el) el.click(); }
+
 function renderImports(){
   const list=(DB.conversations||[]).slice().sort((a,b)=>b.at-a.at);
+  const remaining=journeyRemaining();
+  const journeyCard = remaining ? `<div class="node" style="border-color:rgba(167,139,250,.4)">
+      <div class="nh"><span class="nn">✨ Your journey with Claude</span></div>
+      <div style="margin-top:7px;color:#dbe4ee;line-height:1.55">${remaining} real learning moment${remaining>1?"s":""} from building Inkling together — the transistor reframe, current vs. drift velocity, "edges &gt; flashcards," the CSP wall, and more. They fill your galaxy, story, and city map at once.</div>
+      <div style="margin-top:10px"><button class="btn" style="font:800 12px system-ui" onclick="importJourney()">➕ Add my journey (${remaining})</button></div>
+    </div>` : "";
+  const cgCard = `<div class="node" style="border-color:rgba(57,217,138,.4)">
+      <div class="nh"><span class="nn">📦 Import your ChatGPT history</span></div>
+      <div style="margin-top:7px;color:#dbe4ee;line-height:1.55">Pick your <b>chatgptconvo.zip</b> straight from Downloads — Inkling opens it <b>locally in your browser</b> (nothing is uploaded) and turns each chat into a star in your galaxy, a tower in your atlas, and a chapter in your story. <span style="color:var(--dim)">(Or the unzipped conversations-*.json files.)</span></div>
+      <div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <button class="btn" style="font:800 12px system-ui" onclick="triggerChatGPTImport()">📂 Choose your export (.zip)…</button>
+        <input id="cgFile" type="file" multiple accept=".zip,.json,application/zip,application/json" style="display:none" onchange="importChatGPT(this.files)">
+        <span id="cgStatus" class="hint" style="margin:0"></span>
+      </div>
+    </div>`;
+  const toImprove=(DB.conversations||[]).filter(c=>!c.aiSum).length;
+  const improveCard = list.length ? `<div class="node" style="border-color:rgba(158,203,255,.45)">
+      <div class="nh"><span class="nn">✨ Improve summaries with AI</span></div>
+      <div style="margin-top:7px;color:#dbe4ee;line-height:1.55">Turn the short first-message snippets into real, readable summaries and clean topic tags — batched ~12 per call to stay affordable. Improves your galaxy, atlas, and book at once.${toImprove?"":" <b style='color:#39d98a'>All caught up.</b>"}</div>
+      <div style="margin-top:10px">${inkToken()
+        ? `<button class="btn" style="font:800 12px system-ui" onclick="improveAllSummaries()"${toImprove?"":" disabled"}>✨ ${toImprove?("Improve "+toImprove+" conversation"+(toImprove===1?"":"s")):"All summaries improved"}</button>`
+        : `<span class="hint">Sign in on the main app + set an API key on Render to enable.</span>`}</div>
+    </div>` : "";
+  const toExtract=(DB.conversations||[]).filter(c=>!c.aiExtracted && (c.excerpt||c.summary)).length;
+  const extractCard = list.length ? `<div class="node" style="border-color:rgba(255,138,91,.45)">
+      <div class="nh"><span class="nn">🔮 Extract nodes with AI</span></div>
+      <div style="margin-top:7px;color:#dbe4ee;line-height:1.55">Pull the <b>questions, realizations, projects, people & technologies</b> out of each conversation. They show up on every conversation and become new nodes to navigate. Works best after a re-import (fuller text).${toExtract?"":" <b style='color:#39d98a'>All caught up.</b>"}</div>
+      <div style="margin-top:10px">${inkToken()
+        ? `<button class="btn" style="font:800 12px system-ui" onclick="extractAllNodes()"${toExtract?"":" disabled"}>🔮 ${toExtract?("Extract from "+toExtract+" conversation"+(toExtract===1?"":"s")):"All extracted"}</button>`
+        : `<span class="hint">Sign in on the main app + set an API key on Render to enable.</span>`}</div>
+    </div>` : "";
+  const labelCard = list.length ? `<div class="node" style="border-color:rgba(167,139,250,.45)">
+      <div class="nh"><span class="nn">🔗 Label relationships with AI</span></div>
+      <div style="margin-top:7px;color:#dbe4ee;line-height:1.55">Name the connections between your ideas — <i>inspired, evolved into, depends on, contradicts…</i> — so your memory trails read like a story of how one idea became another.</div>
+      <div style="margin-top:10px">${inkToken()
+        ? `<button class="btn" style="font:800 12px system-ui" onclick="labelAllEdges()">🔗 Label relationships</button>`
+        : `<span class="hint">Sign in on the main app + set an API key on Render to enable.</span>`}</div>
+    </div>` : "";
   if(!list.length){
     app.innerHTML=chrome(`<h1>📥 Imports</h1>
-      <div class="empty">No imported conversations yet.<br><span style="opacity:.8">In the Inkling browser extension, open a ChatGPT/Claude/Gemini chat, click <b>Import</b>, then <b>Open in Inkling</b> — it lands here.</span></div>`, "imports");
+      ${cgCard}
+      ${journeyCard}
+      <div class="empty">No imported conversations yet.<br><span style="opacity:.8">Import your ChatGPT export above, or use the browser extension on any ChatGPT/Claude/Gemini chat.</span></div>`, "imports");
     return;
   }
   const cards=list.map(c=>{
@@ -786,6 +1924,11 @@ function renderImports(){
   app.innerHTML=chrome(
     `<h1>📥 Imports</h1>
      <p class="sub">Conversations you brought in from ChatGPT, Claude, and Gemini — each one a star in your knowledge graph.</p>
+     ${cgCard}
+     ${improveCard}
+     ${extractCard}
+     ${labelCard}
+     ${journeyCard}
      ${galaxyBtn}
      ${cards}`, "imports");
 }
@@ -859,15 +2002,22 @@ function drawGalaxy(convs){
   const spot = window.__spotlightConcept || null;
   const matched = (i)=> spot ? keys[i].has(spot) : true;
 
-  // edges between chats sharing concepts
+  // edges between chats sharing concepts. With a big import (hundreds of chats) the
+  // O(n²) line pass would freeze the canvas, so require stronger sharing and cap it.
+  const need = n>250 ? 2 : 1, MAXL = 4000;
+  let drawn=0;
+  outer:
   for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){
     let shared=0; for(const k of keys[j]){ if(keys[i].has(k)) shared++; }
-    if(shared>0){
+    if(shared>=need){
       const both=matched(i)&&matched(j);
+      // when spotlighting in a large map, only draw the matched threads
+      if(spot && n>250 && !both) continue;
       ctx.strokeStyle = spot ? (both?"rgba(240,171,252,.6)":"rgba(150,130,255,.05)")
                              : "rgba(150,130,255,"+Math.min(.4,.14*shared)+")";
       ctx.lineWidth = spot&&both?1.6:1;
       ctx.beginPath(); ctx.moveTo(stars[i].x,stars[i].y); ctx.lineTo(stars[j].x,stars[j].y); ctx.stroke();
+      if(++drawn>=MAXL) break outer;
     }
   }
   // cluster labels = most common concept
@@ -1162,6 +2312,61 @@ function inklingRespond(t, r){
   return { route:r.type, links, actions:[], html:esc(t) };
 }
 
+/* ---- REAL AI: call the Inkling backend LLM (signed-in), fall back to local ---- */
+const INK_API = (typeof window!=="undefined" && window.__EUGENEOUS_API__) || "https://inkling-15yf.onrender.com";
+function inkToken(){ try{ const s=JSON.parse(localStorage.getItem("eugeneousxr:session")||"null"); return (s&&s.token)?s.token:null; }catch(e){ return null; } }
+function stripHtml(h){ const d=document.createElement("div"); d.innerHTML=String(h||""); return (d.textContent||d.innerText||"").trim(); }
+function mdToHtml(s){
+  let h=esc(String(s||""));
+  h=h.replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/`([^`]+)`/g,"<code>$1</code>");
+  h=h.replace(/^(?:[-*]\s+)(.*)$/gm,"• $1").replace(/\n/g,"<br>");
+  return h;
+}
+// Compact snapshot of the user's graph so the model answers in context — plus a
+// LEARNING-MODE frame (the backend prompt is calendar-flavored; this re-aims it).
+// The Inkling identity frame — the distilled charter (see INKLING_CHARTER.md §4).
+// This is what makes the model behave AS Inkling without being re-briefed.
+const INKLING_FRAME = [
+"You are Inkling — not a chatbot or a notebook, but the user's personal instrument for understanding: a living knowledge graph and an evolving autobiography of how their thinking grows. Talking to you should feel like opening the next chapter of their own intellectual journey.",
+"How to respond:",
+"- Be a curious mentor and thinking partner, never an answer-vending machine.",
+"- When they ask about a concept, first ask briefly what they already think, then explain clearly and accurately. Never gatekeep — if they want the answer, give it.",
+"- Always connect: tie the idea to what they already know and propose one new connection (an edge) with a one-line why. Value connections over facts.",
+"- Treat each exchange as a moment in an evolving story; notice how their understanding is changing and reflect it back.",
+"- Cultivate curiosity: explain, question, challenge, inspire. End with at most one inviting question. Be concise, specific, warm. Ground claims; don't fabricate.",
+"- This is learning mode — do not propose calendar events or reminders unless explicitly asked. Measure success by understanding and connection, never completion.",
+"You're talking to Jeremy — a curiosity-driven systems thinker who learns from first principles and thinks in graphs; his paths span electrical/electronics, AI, and robotics. Meet him big-picture first, then the mechanism."
+].join("\n");
+function mindSummaryForChat(){
+  const parts=[INKLING_FRAME];
+  const convs=DB.conversations||[];
+  if(convs.length) parts.push("Imported conversations ("+convs.length+"): "+convs.slice(0,12).map(c=>c.title+((c.concepts&&c.concepts.length)?(" ["+c.concepts.slice(0,4).join(", ")+"]"):"")).join("; "));
+  const oq=[]; Object.values(DB.openQs||{}).forEach(arr=>(arr||[]).forEach(q=>oq.push(q)));
+  if(oq.length) parts.push("Open questions: "+oq.slice(0,8).join("; "));
+  if(DB.profile&&DB.profile.fields&&DB.profile.fields.length) parts.push("Focus fields: "+DB.profile.fields.join(", "));
+  return parts.join("\n").slice(0,2000);
+}
+// Returns the LLM result {reply,...} only when the server actually used a model.
+async function askInklingAI(t){
+  const token=inkToken(); if(!token) return null;
+  const history=(DB.chat||[])
+    .filter(m=>(m.role==="user"||m.role==="inkling") && !m.thinking)
+    .slice(-16)
+    .map(m=>({ role:m.role==="user"?"user":"assistant", content:m.role==="user"?String(m.text||""):(m.plain||stripHtml(m.html)||m.text||"") }))
+    .filter(m=>m.content);
+  try{
+    const res=await fetch(INK_API+"/api/inkling/chat",{
+      method:"POST",
+      headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+token },
+      body:JSON.stringify({ message:t, history, mindSummary:mindSummaryForChat(),
+        userName:(DB.profile&&DB.profile.name)||undefined, referenceDate:new Date().toISOString().slice(0,10) })
+    });
+    if(!res.ok) return null;
+    const data=await res.json();
+    return (data && data.source==="llm" && data.reply) ? data : null;  // guest/mock/capped/etc → local
+  }catch(e){ return null; }
+}
+
 function renderRouter(){
   const chat=DB.chat||[];
   const thread = chat.length ? chat.map(chatBubble).join("") : chatEmpty();
@@ -1172,7 +2377,7 @@ function renderRouter(){
        <textarea id="capText" placeholder="Ask something, or tell Inkling what's on your mind…" style="min-height:60px" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();interpret();}"></textarea>
        <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
          <button class="btn" onclick="interpret()">Send ›</button>
-         <span class="hint" style="margin:0">Enter to send · Inkling extracts concepts, questions & connections as you talk</span>
+         <span class="hint" style="margin:0">${inkToken()?"✦ AI connected · Enter to send":"Quick mode · <b>sign in on the main app</b> for full AI · Enter to send"}</span>
          ${chat.length?`<button class="back" style="margin-left:auto" onclick="clearChat()">clear chat</button>`:""}
        </div>
      </div>
@@ -1187,7 +2392,14 @@ function chatBubble(m){
     return `<div style="display:flex;justify-content:flex-end;margin-bottom:12px">
       <div style="max-width:82%;background:rgba(88,166,255,.16);border:1px solid rgba(88,166,255,.35);border-radius:14px 14px 4px 14px;padding:10px 13px;color:#eaf2ff;line-height:1.5">${esc(m.text)}</div></div>`;
   }
+  if(m.thinking){
+    return `<div style="display:flex;gap:9px;margin-bottom:15px">
+      <div style="flex:0 0 auto;font-size:20px;line-height:1.4">🌱</div>
+      <div style="max-width:88%;background:var(--panel);border:1px solid var(--line);border-radius:4px 14px 14px 14px;padding:11px 13px">
+        <span class="hint" style="margin:0">Inkling is thinking… <span style="opacity:.7">(first reply can take a moment)</span></span></div></div>`;
+  }
   const R = m.route? ROUTES[m.route] : null;
+  const srcTag = m.source==="llm" ? `<div class="hint" style="margin-top:8px;color:var(--violet)">✦ Inkling AI</div>` : "";
   const extraction = R? `<div class="hint" style="margin-top:8px;color:${R.color}">${R.icon} ${R.verb}</div>` : "";
   const chips = (m.links&&m.links.length)? `<div class="links" style="margin-top:7px">${m.links.map(l=>`<span class="lk">${esc(l)}</span>`).join("")}</div>` : "";
   const actions = (m.actions&&m.actions.length)? `<div style="margin-top:11px;display:flex;gap:7px;flex-wrap:wrap">${m.actions.map(a=>`<button class="btn ${a.kind==='pink'?'pink':'ghost'}" style="padding:7px 13px;font:800 11px system-ui" onclick="${a.onclick}">${esc(a.label)}</button>`).join("")}</div>` : "";
@@ -1195,17 +2407,34 @@ function chatBubble(m){
     <div style="flex:0 0 auto;font-size:20px;line-height:1.4">🌱</div>
     <div style="max-width:88%;background:var(--panel);border:1px solid var(--line);border-radius:4px 14px 14px 14px;padding:11px 13px">
       <div style="color:#dbe4ee;line-height:1.55">${m.html||esc(m.text||"")}</div>
-      ${extraction}${chips}${actions}</div></div>`;
+      ${srcTag}${extraction}${chips}${actions}</div></div>`;
 }
-function interpret(){
+async function interpret(){
   const el=document.getElementById("capText"); const t=(el.value||"").trim(); if(!t){ el.focus(); return; }
   DB.chat=DB.chat||[];
   DB.chat.push({ role:"user", text:t, at:Date.now() });
   const r=classify(t);
   // extract a knowledge node from the conversation (don't save every sentence as its own node type — but do route it)
   DB.captures.push({ id:"c"+Date.now(), text:t, type:r.type, links:r.links, reason:r.reason, at:Date.now() });
-  const resp=inklingRespond(t, r);
-  DB.chat.push(Object.assign({ role:"inkling", at:Date.now()+1 }, resp));
+
+  // Signed in? Try the real model, showing a thinking bubble (cold start can be slow).
+  if(inkToken()){
+    const thinkId="think"+Date.now();
+    DB.chat.push({ role:"inkling", thinking:true, id:thinkId, at:Date.now()+1 });
+    persist(); renderRouter();
+    let ai=null; try{ ai=await askInklingAI(t); }catch(e){ ai=null; }
+    DB.chat=(DB.chat||[]).filter(m=>m.id!==thinkId);
+    if(ai){
+      const tmpl=inklingRespond(t, r);   // reuse the template's helpful nav buttons
+      DB.chat.push({ role:"inkling", html:mdToHtml(ai.reply), plain:ai.reply, route:r.type, links:r.links, actions:tmpl.actions, source:"llm", at:Date.now()+2 });
+    } else {
+      DB.chat.push(Object.assign({ role:"inkling", source:"local", at:Date.now()+2 }, inklingRespond(t, r)));
+    }
+    persist(); renderRouter(); return;
+  }
+
+  // Guest → local responder (sign in on the main app for full AI).
+  DB.chat.push(Object.assign({ role:"inkling", source:"local", at:Date.now()+1 }, inklingRespond(t, r)));
   persist(); renderRouter();
 }
 // Clearing the transcript never deletes extracted knowledge — that stays in your graph.
@@ -1536,10 +2765,17 @@ function renderModel(){
       });
       try{ if(window.opener) window.opener.postMessage({type:"inkling-import-ready"}, "*"); }catch(e){}
     } else {
+      const qs = new URLSearchParams(location.search);
       // Deep link straight to a section, e.g. ?view=galaxy or ?view=imports.
-      const vw = new URLSearchParams(location.search).get("view");
-      if(vw && ["dashboard","galaxy","imports","storybook","model","router","paths","quiz","story","memory"].includes(vw)){
+      const vw = qs.get("view");
+      if(vw && ["dashboard","galaxy","imports","storybook","graph","model","router","paths","quiz","story","memory"].includes(vw)){
         view = { name: vw };
+      }
+      // Ask from the Atlas: ?ask=<question> opens Chat and sends it (closes the loop).
+      const ask = qs.get("ask");
+      if(ask){
+        view = { name:"router" };
+        setTimeout(()=>{ const el=document.getElementById("capText"); if(el){ el.value=ask; interpret(); } try{ history.replaceState(null,"",location.pathname); }catch(e){} }, 60);
       }
     }
   }catch(e){ /* ignore a malformed handoff */ }

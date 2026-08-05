@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Inkling · Knowledge City</title>
-  <script type="module" crossorigin src="./assets/index-CsH4NWff.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-ECwMfymV.css">
+  <title>Inkling · Knowledge Atlas</title>
+  <script type="module" crossorigin src="./assets/index-D8jGgXDN.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-DFxCJywP.css">
 </head>
 <body>
   <!-- The renderer canvas is created by App.js and appended here. -->
@@ -13,15 +13,31 @@
 
   <!-- HUD (2D overlays live above the 3D world) -->
   <header id="hud-top">
-    <div class="brand">🏙️ Knowledge City<small>a living map of understanding</small></div>
+    <div class="brand">🗺️ Knowledge Atlas<small>a living map of understanding</small></div>
     <div id="mode-tabs"></div>
   </header>
-  <div id="hud-hint">drag to orbit · scroll to zoom · hover a building · click to inspect</div>
+  <div id="hud-hint">drag to orbit · scroll to zoom · a lit window is a story — click it to read</div>
   <div id="legend"></div>
 
   <!-- Panels are managed by src/ui/*.js -->
   <aside id="info-panel" class="panel" aria-hidden="true"></aside>
   <section id="storybook-panel" class="reader" aria-hidden="true"></section>
 
+  <!-- Visitor analytics (GoatCounter — privacy-friendly, no cookies). Owner self-exclude: ?noviews once per device (?countme to undo). Data: eugeneousxr.goatcounter.com -->
+  <script>
+    (function () {
+      try {
+        var p = new URLSearchParams(location.search);
+        if (p.has("noviews")) localStorage.setItem("skipgc", "t");
+        if (p.has("countme")) localStorage.removeItem("skipgc");
+        if (localStorage.getItem("skipgc") === "t") return;
+      } catch (e) { /* ignore */ }
+      var s = document.createElement("script");
+      s.async = true;
+      s.src = "//gc.zgo.at/count.js";
+      s.setAttribute("data-goatcounter", "https://eugeneousxr.goatcounter.com/count");
+      document.head.appendChild(s);
+    })();
+  </script>
 </body>
 </html>
